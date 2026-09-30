@@ -91,6 +91,15 @@ with tempfile.TemporaryDirectory(prefix="tmux-picker-tpm-") as temporary:
         assert "ok      tmux" in run("sh", "-c", command + " doctor")
         assert "session\t" in run("sh", "-c", command + " list sessions")
 
+        # The new bundled view survives TPM installation and relocated paths.
+        assert "agents > " in run("sh", "-c", command + " switch-view agents")
+        assert (relocated / "bin/agent_providers/codex.py").is_file()
+        run("python3", str(relocated / "bin/tmux-picker-agents"), "install-codex-hooks")
+        hooks = json.loads((home / ".codex/hooks.json").read_text())
+        assert shlex.split(hooks["hooks"]["Stop"][0]["hooks"][0]["command"]) == [
+            str(relocated / "bin/tmux-picker-agents"), "hook", "codex"]
+        run("python3", str(relocated / "bin/tmux-picker-agents"), "uninstall-codex-hooks")
+
         # Preview real nested splits and preserve the layout while zoomed.
         original_pane = tmux("display-message", "-p", "-t", "test", "#{pane_id}")
         window_id = tmux("display-message", "-p", "-t", "test", "#{window_id}")

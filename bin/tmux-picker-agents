@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""Discover pane agents and record native lifecycle events (stdlib only)."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+import tempfile
+import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True
+from agent_providers import PROVIDERS
+
+STATUSES = PROVIDERS["codex"].events
+codex = PROVIDERS["codex"].matches
+
+
+def state_dir():
+    return Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "tmux-picker/agents"
+
+
+def output(*args):
+    return subprocess.check_output(args, text=True, stderr=subprocess.DEVNULL, timeout=3)
+
+
+def processes():
+    result = {}
+    for line in output("ps", "-axo", "pid=,ppid=,comm=,args=").splitlines():
+        fields = line.split(None, 3)
+        if len(fields) < 4:
+            continue
+        pid, parent, command, args = fields
+        result[int(pid)] = {"pid": int(pid), "parent": int(parent), "command": command, "args": args}
+    return result
+
+
+def owns(table, root, pid):
+    seen = set()
+    while pid not in seen:
+        if pid == root:
+            return True
+        if pid not in table:
+            break
+        seen.add(pid)
+        pid = table[pid]["parent"]
+    return False
+
+
+def identity(pid):
+    # Process start time prevents status leaking across PID reuse.
+    try:
+        return output("ps", "-o", "lstart=", "-p", str(pid)).strip()
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
+
+def tmux(socket, *args):
+    return output("tmux", "-S", socket, *args)
+
+
+def panes(socket):
+    result = []
+    fmt = "#{pane_id}\t#{pane_pid}\t#{session_name}:#{window_index}.#{pane_index}\t#{pane_current_path}\t#{pane_dead}"
+    for line in tmux(socket, "list-panes", "-a", "-F", fmt).splitlines():
+        fields = line.split("\t")
+        if len(fields) == 5 and fields[1].isdigit() and fields[4] != "1":
+            result.append({"pane": fields[0], "root": int(fields[1]), "location": fields[2], "cwd": fields[3]})
+    return result
+
+
+def atomic_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".record-")
+    try:
+        with os.fdopen(fd, "w") as stream:
+            json.dump(value, stream)
+            stream.write("\n")
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def read_records():
+    records = []
+    for path in state_dir().glob("*.json"):
+        try:
+            record = json.loads(path.read_text())
+            if isinstance(record, dict) and record.get("version") == 1:
+                records.append(record)
+        except (OSError, ValueError):
+            pass
+    return records
+
+
+def discover(socket):
+    table = processes()
+    records = read_records()
+    result = []
+    for pane in panes(socket):
+        for process in table.values():
+            provider = next((name for name, adapter in PROVIDERS.items() if adapter.matches(process)), None)
+            if not provider or not owns(table, pane["root"], process["pid"]):
+                continue
+            started = identity(process["pid"])
+            candidates = [r for r in records if r.get("provider") == provider
+                          and r.get("socket") == socket and r.get("pane") == pane["pane"]
+                          and r.get("pid") == process["pid"] and started
+                          and r.get("process_start") == started]
+            record = max(candidates, key=lambda r: r.get("updated_at", 0), default={})
+            key = hashlib.sha256((socket + ":" + pane["pane"] + ":" + str(process["pid"]) + ":" + started).encode()).hexdigest()
+            result.append({**pane, "id": key, "provider": provider, "pid": process["pid"],
+                           "session_id": record.get("session_id", ""),
+                           "status": record.get("status", "unknown"),
+                           "association": record.get("association", "unassociated"),
+                           "reason": record.get("reason", "no associated hook status"),
+                           "updated_at": record.get("updated_at", 0)})
+    priority = {"waiting": 0, "working": 1, "idle": 2, "unknown": 3, "stopped": 4}
+    return sorted(result, key=lambda r: (priority.get(r["status"], 3), r["location"], r["pid"]))
+
+
+def record_hook(payload, provider="codex"):
+    adapter = PROVIDERS[provider]
+    event = payload.get("hook_event_name")
+    session = payload.get("session_id")
+    if event not in adapter.events or not isinstance(session, str) or not session:
+        return
+    if event == "SessionStart" and payload.get("source") == "compact":
+        return  # Compaction can happen mid-turn; it must not mark work idle.
+    table = processes()
+    pid = os.getppid()
+    owner = None
+    seen = set()
+    while pid in table and pid not in seen:
+        seen.add(pid)
+        if adapter.matches(table[pid]):
+            owner = pid
+            break
+        pid = table[pid]["parent"]
+    socket = os.environ.get("TMUX", "").split(",")[0]
+    pane = None
+    if socket and owner:
+        for candidate in panes(socket):
+            if owns(table, candidate["root"], owner):
+                pane = candidate
+                break
+    # Shared-daemon hooks have no pane-owned CLI ancestor. A unique directory
+    # match is useful here, but multiple agents in that directory are ambiguous.
+    # Never use the daemon's inherited TMUX_PANE as an ownership claim.
+    association = "process ancestry" if pane else "unassociated"
+    cwd = payload.get("cwd")
+    if socket and not pane:
+        # Keep a previously established exact link across later daemon events.
+        previous = next((r for r in read_records() if r.get("provider") == provider
+                         and r.get("session_id") == session and r.get("socket") == socket
+                         and r.get("association") == "process ancestry"), None)
+        if previous and previous.get("pid") in table and adapter.matches(table[previous["pid"]]) \
+                and previous.get("process_start") == identity(previous["pid"]):
+            for candidate in panes(socket):
+                if candidate["pane"] == previous.get("pane") and owns(table, candidate["root"], previous["pid"]):
+                    pane, owner = candidate, previous["pid"]
+                    association = "process ancestry"
+                    break
+    if socket and not pane and isinstance(cwd, str) and cwd:
+        candidates = []
+        for candidate in panes(socket):
+            if os.path.realpath(candidate["cwd"]) != os.path.realpath(cwd):
+                continue
+            for process in table.values():
+                if adapter.matches(process) and owns(table, candidate["root"], process["pid"]):
+                    candidates.append((candidate, process["pid"]))
+        if len(candidates) == 1:
+            pane, owner = candidates[0]
+            association = "unique directory (inferred)"
+    status, reason = adapter.events[event]
+    record = {"version": 1, "provider": provider, "session_id": session,
+              "status": status, "reason": reason, "updated_at": time.time(),
+              "cwd": payload.get("cwd", ""), "socket": socket,
+              "pane": pane["pane"] if pane else "", "pid": owner,
+              "process_start": identity(owner) if owner else "", "association": association}
+    atomic_json(state_dir() / (hashlib.sha256((provider + ":" + session).encode()).hexdigest() + ".json"), record)
+
+
+def configure_hooks(remove=False):
+    home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    path = home / "hooks.json"
+    data = json.loads(path.read_text()) if path.exists() else {}
+    hooks = data.setdefault("hooks", {})
+    command = shlex.quote(str(Path(__file__).resolve())) + " hook codex"
+    for event in STATUSES:
+        groups = hooks.get(event, [])
+        kept = []
+        for group in groups:
+            # Only remove our marked handlers; preserve unrelated hooks and matchers.
+            handlers = [h for h in group.get("hooks", []) if h.get("statusMessage") != "tmux-picker agent status"]
+            if handlers:
+                kept.append({**group, "hooks": handlers})
+        if not remove:
+            kept.append({"hooks": [{"type": "command", "command": command,
+                                    "timeout": 3, "statusMessage": "tmux-picker agent status"}]})
+        if kept:
+            hooks[event] = kept
+        else:
+            hooks.pop(event, None)
+    if path.exists():
+        backup = path.with_name("hooks.json.tmux-picker-backup")
+        if not backup.exists():
+            atomic_json(backup, json.loads(path.read_text()))
+    atomic_json(path, data)
+    print("Updated " + str(path))
+    if not remove:
+        print("Open /hooks in Codex to review and trust these hooks.")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", choices=["list", "hook", "install-codex-hooks", "uninstall-codex-hooks"])
+    parser.add_argument("provider", nargs="?", choices=list(PROVIDERS), default="codex")
+    parser.add_argument("--socket")
+    args = parser.parse_args()
+    if args.command == "hook":
+        try:
+            record_hook(json.load(sys.stdin), args.provider)
+        except (ValueError, TypeError, AttributeError, OSError, subprocess.SubprocessError):
+            pass  # Observational hooks must not interrupt the agent.
+        # Stop hooks require JSON; an empty object has no behavioral effect.
+        print("{}")
+    elif args.command == "list":
+        print(json.dumps(discover(args.socket or os.environ.get("TMUX", "").split(",")[0])))
+    else:
+        configure_hooks(args.command == "uninstall-codex-hooks")
+
+
+if __name__ == "__main__":
+    main()

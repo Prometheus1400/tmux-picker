@@ -127,6 +127,74 @@ native tmux border; configure that with `set -g popup-border-style`.
 
 ## Plugins
 
+### Agents view
+
+The bundled `agents` plugin adds **Ctrl-G** to discover coding agents running
+inside panes on the current tmux server. Codex is the first supported provider.
+It takes one process snapshot and walks descendants of each pane's shell;
+ordinary `codex` launches work without a wrapper or changes to daemon behavior.
+The optional view requires Python 3 (standard library only).
+
+Rows show status, provider, session/window/pane location, and directory. Enter
+focuses the exact pane, **Ctrl-R** refreshes, and the preview shows metadata plus
+recent pane output. Waiting agents sort before working and idle agents. Ctrl-D
+does not kill agents; use the panes view for that. Lists refresh on entry and
+Ctrl-R; they do not poll continuously.
+
+Without hooks, running agents appear with `unknown` status. To add Codex status:
+
+```sh
+~/.tmux/plugins/tmux-picker/bin/tmux-picker-agents install-codex-hooks
+```
+
+Then open **`/hooks` in Codex** to review and trust the handlers. The command
+merges handlers into `${CODEX_HOME:-$HOME/.codex}/hooks.json`, preserves other
+hooks, saves the original to `hooks.json.tmux-picker-backup`, and is safe to
+repeat after moving the plugin. To remove only the picker's handlers:
+
+```sh
+~/.tmux/plugins/tmux-picker/bin/tmux-picker-agents uninstall-codex-hooks
+```
+
+Prompt submission and tool activity mark `working`, approval requests mark
+`waiting`, turn completion/interruption mark `idle`, and session end marks
+`stopped`. These are last observed hook signals, not proof that every approval
+or user question is still pending. Updates apply on the next refresh.
+
+Hooks prefer process ancestry to associate a session with its pane. Shared
+Codex daemon hooks may lack that ancestry; the adapter then infers association
+only when exactly one Codex process on that server matches the hook's working
+directory. The preview labels this inference. Multiple Codex instances in the
+same directory remain `unknown` when no exact association is available, rather
+than guessing between them. A hook without a tmux server remains unassociated.
+Pane existence and process start time are rechecked to reject stale records.
+
+State lives under `${XDG_STATE_HOME:-$HOME/.local/state}/tmux-picker/agents`.
+Records contain metadata only; prompts, responses, and tool arguments are not
+saved. The hook prints no agent instructions and never makes approval decisions.
+
+Disable this first-party plugin, or a provider, in `init.lua`:
+
+```lua
+return {
+  bundled_plugins = { agents = false },
+  -- Alternatively keep the view and disable only Codex:
+  -- agents = { providers = { codex = false } },
+}
+```
+
+Disabling the view does not uninstall separately configured Codex hooks; use
+the uninstall command to stop recording status.
+
+Provider adapters live in `bin/agent_providers/`. Each exposes `matches(process)`
+and an `events` map translating native hook names into `(status, reason)` pairs.
+Register a new adapter in `PROVIDERS`, and supply its native hook configuration;
+the shared discovery, storage, sorting, and Agents view need no provider-specific
+changes. `tmux-picker-agents hook <provider>` receives the adapter's event JSON
+on stdin. The initial hook setup command is Codex-specific.
+
+### Plugin API
+
 First-party plugins bundled in `plugins/` load before every `*.lua` file under
 `${XDG_CONFIG_HOME:-$HOME/.config}/tmux-picker/plugins`. Files in each
 directory load in filename order. Plugins are trusted code and run with the
