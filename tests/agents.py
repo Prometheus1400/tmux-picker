@@ -92,7 +92,7 @@ local alive = true
 util.run = function(command)
   if command:find("command -v", 1, true) then return "/usr/bin/python3" end
   if command:find(" conversation --socket ", 1, true) then
-    return [[{"messages":[{"role":"user","text":"Please fix it"},{"role":"assistant","text":"Fixed it\\u001b[31m"}],"notice":""}]]
+    return [[{"record":{"provider":"codex","status":"working","reason":"tool activity","cwd":"/repo","location":"test:0.1","association":"process ancestry","updated_at":0},"messages":[{"role":"user","text":"Please fix it"},{"role":"assistant","text":"Fixed it\\u001b[31m"}],"notice":""}]]
   end
   if not alive then return "[]" end
   return '[{"id":"identity","pane":"%2","pid":42,"provider":"codex","status":"working","reason":"tool activity","cwd":"/repo","location":"test:0.1","association":"process ancestry","session_id":"session","updated_at":0}]'
@@ -113,8 +113,9 @@ local kind = assert(registry.kind("agent"))
 kind.accept({target="identity"})
 assert(switched == "%2")
 local written = {}
+local write_calls = 0
 local original_write = io.write
-io.write = function(...) for i=1,select("#", ...) do written[#written+1] = tostring(select(i, ...)) end end
+io.write = function(...) write_calls = write_calls + 1; for i=1,select("#", ...) do written[#written+1] = tostring(select(i, ...)) end end
 tmux.capture_pane = function() error("conversation preview must not capture pane content") end
 kind.preview({target="identity"})
 io.write = original_write
@@ -123,6 +124,7 @@ assert(preview:find("codex conversation", 1, true) and preview:find("You", 1, tr
 assert(preview:find("Please fix it", 1, true) and preview:find("Fixed it", 1, true))
 assert(not preview:find("[31m", 1, true))
 assert(not preview:find("Fixed it" .. string.char(27), 1, true))
+assert(write_calls == 1)
 switched = nil
 alive = false
 kind.accept({target="identity"})
@@ -165,6 +167,26 @@ assert(registry.action("agents.refresh")({}, "agents").reload)
             path.unlink()
             self.assertIn("unavailable", adapter.conversation({"transcript_path": str(path)})["notice"])
             self.assertIn("/hooks", adapter.conversation({})["notice"])
+
+    def test_preview_uses_snapshot_but_revalidates_and_updates_status(self):
+        record = {"id": "target", "pane": "%2", "pid": 42, "root": 10, "provider": "codex",
+                  "process_start": "start", "status": "idle", "updated_at": 0}
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, XDG_STATE_HOME=directory), \
+                patch.object(agents, "identity", return_value="start"), \
+                patch.object(agents, "tmux", return_value="10\n"), \
+                patch.object(agents, "processes", side_effect=AssertionError("preview scanned all processes")), \
+                patch.object(agents, "discover", side_effect=AssertionError("preview rediscovered every agent")):
+            agents.save_snapshot("socket", [record])
+            updated = {"version": 1, "provider": "codex", "socket": "socket", "pane": "%2", "pid": 42,
+                       "process_start": "start", "status": "waiting", "reason": "approval requested", "updated_at": 1}
+            agents.atomic_json(agents.state_dir() / "event.json", updated)
+            result = agents.conversation("socket", "target")
+            self.assertEqual(result["record"]["status"], "waiting")
+            self.assertIsNone(agents.selected_record("other-server", "target"))
+            with patch.object(agents, "identity", return_value="reused PID"):
+                self.assertIsNone(agents.selected_record("socket", "target"))
+            with patch.object(agents, "tmux", return_value="different pane owner"):
+                self.assertIsNone(agents.selected_record("socket", "target"))
 
     def test_real_panes_and_stale_status(self):
         with tempfile.TemporaryDirectory(prefix="picker-agents-") as directory:

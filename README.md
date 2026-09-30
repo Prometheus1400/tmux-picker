@@ -180,6 +180,11 @@ tool calls are omitted. Transcript formats are version-dependent, so an
 unavailable or unsupported transcript produces a notice instead of pane output.
 The hook prints no agent instructions and never makes approval decisions.
 
+The agent list caches its metadata for previews. Navigating the list validates
+only the selected process and pane, picks up new hook status, and reads its
+bounded transcript tail. Enter still performs fresh discovery before switching
+panes. Conversation text is not cached in picker state.
+
 Disable this first-party plugin, or a provider, in `init.lua`:
 
 ```lua

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Discover pane agents and record native lifecycle events (stdlib only)."""
-import argparse
 import hashlib
 import json
 import os
@@ -114,6 +113,7 @@ def discover(socket):
             record = max(candidates, key=lambda r: r.get("updated_at", 0), default={})
             key = hashlib.sha256((socket + ":" + pane["pane"] + ":" + str(process["pid"]) + ":" + started).encode()).hexdigest()
             result.append({**pane, "id": key, "provider": provider, "pid": process["pid"],
+                           "process_start": started,
                            "session_id": record.get("session_id", ""),
                            "transcript_path": record.get("transcript_path", ""),
                            "status": record.get("status", "unknown"),
@@ -122,6 +122,47 @@ def discover(socket):
                            "updated_at": record.get("updated_at", 0)})
     priority = {"waiting": 0, "working": 1, "idle": 2, "unknown": 3, "stopped": 4}
     return sorted(result, key=lambda r: (priority.get(r["status"], 3), r["location"], r["pid"]))
+
+
+def snapshot_path(socket):
+    return state_dir() / "snapshots" / (hashlib.sha256(socket.encode()).hexdigest() + ".json")
+
+
+def save_snapshot(socket, records):
+    atomic_json(snapshot_path(socket), {"socket": socket, "records": {r["id"]: r for r in records}})
+
+
+def selected_record(socket, target):
+    """Preview one list entry without scanning every process and pane again."""
+    try:
+        snapshot = json.loads(snapshot_path(socket).read_text())
+        if snapshot.get("socket") != socket:
+            return None
+        record = snapshot["records"].get(target)
+        if not record or not record.get("process_start") or identity(record["pid"]) != record["process_start"]:
+            return None
+        root = tmux(socket, "display-message", "-p", "-t", record["pane"], "#{pane_pid}").strip()
+        if root != str(record["root"]):
+            return None
+        # Hook updates may have arrived since the list was loaded. Refresh only
+        # metadata; conversation text is still read directly from its transcript.
+        candidates = [r for r in read_records() if r.get("provider") == record["provider"]
+                      and r.get("socket") == socket and r.get("pane") == record["pane"]
+                      and r.get("pid") == record["pid"] and r.get("process_start") == record["process_start"]]
+        if candidates:
+            latest = max(candidates, key=lambda r: r.get("updated_at", 0))
+            record.update({k: latest[k] for k in ("session_id", "transcript_path", "status", "reason", "association", "updated_at")
+                           if k in latest})
+        return record
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError):
+        return None
+
+
+def conversation(socket, target):
+    record = selected_record(socket, target)
+    if not record:
+        return {"messages": [], "notice": "Agent is no longer running. Refresh the Agents view."}
+    return {**PROVIDERS[record["provider"]].conversation(record), "record": record}
 
 
 def record_hook(payload, provider="codex"):
@@ -219,6 +260,12 @@ def configure_hooks(remove=False):
 
 
 def main():
+    # This is the hot path used by fzf. Avoid argparse's startup cost on each
+    # selection; other invocations retain the normal help and argument parser.
+    if len(sys.argv) == 6 and sys.argv[1:3] == ["conversation", "--socket"] and sys.argv[4] == "--target":
+        print(json.dumps(conversation(sys.argv[3], sys.argv[5])))
+        return
+    import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["list", "conversation", "hook", "install-codex-hooks", "uninstall-codex-hooks"])
     parser.add_argument("provider", nargs="?", choices=list(PROVIDERS), default="codex")
@@ -233,13 +280,12 @@ def main():
         # Stop hooks require JSON; an empty object has no behavioral effect.
         print("{}")
     elif args.command == "list":
-        print(json.dumps(discover(args.socket or os.environ.get("TMUX", "").split(",")[0])))
+        socket = args.socket or os.environ.get("TMUX", "").split(",")[0]
+        records = discover(socket)
+        save_snapshot(socket, records)
+        print(json.dumps(records))
     elif args.command == "conversation":
-        record = next((r for r in discover(args.socket or os.environ.get("TMUX", "").split(",")[0])
-                       if r["id"] == args.target), None)
-        result = PROVIDERS[record["provider"]].conversation(record) if record else {
-            "messages": [], "notice": "Agent is no longer running."}
-        print(json.dumps(result))
+        print(json.dumps(conversation(args.socket or os.environ.get("TMUX", "").split(",")[0], args.target)))
     else:
         configure_hooks(args.command == "uninstall-codex-hooks")
 

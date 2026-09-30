@@ -48,29 +48,37 @@ return {
 				if record then tmux.switch_pane(record.pane) else ctx.notify("agent is no longer running") end
 			end,
 			preview = function(row)
-				local record = find(row.target)
-				if not record then io.write("Agent is no longer running\n"); return end
-				io.write(config.colors.green, "\27[1m", record.provider, " conversation", config.colors.reset,
-					"  · ", plain(record.status), "\n", config.colors.muted, plain(record.location),
-					"  · ", plain(record.cwd), config.colors.reset, "\n", plain(record.reason))
-				if record.updated_at > 0 then io.write(" · ", os.date("%H:%M:%S", record.updated_at)) end
-				io.write("\n")
-				if record.association == "unique directory (inferred)" then
-					io.write(config.colors.muted, "Session association inferred from directory", config.colors.reset, "\n")
-				end
-				local socket = util.trim(tmux.run("display-message -p '#{socket_path}'"))
+				local socket = (os.getenv("TMUX") or ""):match("^([^,]+)")
+					or util.trim(tmux.run("display-message -p '#{socket_path}'"))
 				local output = util.run("PATH=" .. util.shell_quote(config.path_prefix) .. " python3 "
 					.. util.shell_quote(config.root .. "/bin/tmux-picker-agents") .. " conversation --socket "
 					.. util.shell_quote(socket) .. " --target " .. util.shell_quote(row.target))
 				local conversation = ctx.json.decode(output or "") or {}
+				local record = conversation.record
+				if not record or config.agents.providers[record.provider] == false then
+					io.write(plain(conversation.notice or "Agent is no longer running"), "\n"); return
+				end
+				local chunks = {}
+				local function write(...)
+					for index = 1, select("#", ...) do chunks[#chunks + 1] = tostring(select(index, ...)) end
+				end
+				write(config.colors.green, "\27[1m", record.provider, " conversation", config.colors.reset,
+					"  · ", plain(record.status), "\n", config.colors.muted, plain(record.location),
+					"  · ", plain(record.cwd), config.colors.reset, "\n", plain(record.reason))
+				if record.updated_at > 0 then write(" · ", os.date("%H:%M:%S", record.updated_at)) end
+				write("\n")
+				if record.association == "unique directory (inferred)" then
+					write(config.colors.muted, "Session association inferred from directory", config.colors.reset, "\n")
+				end
 				for _, message in ipairs(conversation.messages or {}) do
 					local user = message.role == "user"
-					io.write("\n", user and config.colors.blue or config.colors.green, "\27[1m",
+					write("\n", user and config.colors.blue or config.colors.green, "\27[1m",
 						user and "You" or record.provider, config.colors.reset, "\n", plain(message.text), "\n")
 				end
 				if #(conversation.messages or {}) == 0 then
-					io.write("\n", config.colors.muted, plain(conversation.notice or "Conversation unavailable"), config.colors.reset, "\n")
+					write("\n", config.colors.muted, plain(conversation.notice or "Conversation unavailable"), config.colors.reset, "\n")
 				end
+				io.write(table.concat(chunks))
 			end,
 			kill = function() ctx.notify("agent rows cannot be killed; use the panes view") end,
 		})
