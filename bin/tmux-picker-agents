@@ -115,6 +115,7 @@ def discover(socket):
             key = hashlib.sha256((socket + ":" + pane["pane"] + ":" + str(process["pid"]) + ":" + started).encode()).hexdigest()
             result.append({**pane, "id": key, "provider": provider, "pid": process["pid"],
                            "session_id": record.get("session_id", ""),
+                           "transcript_path": record.get("transcript_path", ""),
                            "status": record.get("status", "unknown"),
                            "association": record.get("association", "unassociated"),
                            "reason": record.get("reason", "no associated hook status"),
@@ -181,7 +182,8 @@ def record_hook(payload, provider="codex"):
               "status": status, "reason": reason, "updated_at": time.time(),
               "cwd": payload.get("cwd", ""), "socket": socket,
               "pane": pane["pane"] if pane else "", "pid": owner,
-              "process_start": identity(owner) if owner else "", "association": association}
+              "process_start": identity(owner) if owner else "", "association": association,
+              "transcript_path": payload.get("transcript_path", "")}
     atomic_json(state_dir() / (hashlib.sha256((provider + ":" + session).encode()).hexdigest() + ".json"), record)
 
 
@@ -218,9 +220,10 @@ def configure_hooks(remove=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["list", "hook", "install-codex-hooks", "uninstall-codex-hooks"])
+    parser.add_argument("command", choices=["list", "conversation", "hook", "install-codex-hooks", "uninstall-codex-hooks"])
     parser.add_argument("provider", nargs="?", choices=list(PROVIDERS), default="codex")
     parser.add_argument("--socket")
+    parser.add_argument("--target")
     args = parser.parse_args()
     if args.command == "hook":
         try:
@@ -231,6 +234,12 @@ def main():
         print("{}")
     elif args.command == "list":
         print(json.dumps(discover(args.socket or os.environ.get("TMUX", "").split(",")[0])))
+    elif args.command == "conversation":
+        record = next((r for r in discover(args.socket or os.environ.get("TMUX", "").split(",")[0])
+                       if r["id"] == args.target), None)
+        result = PROVIDERS[record["provider"]].conversation(record) if record else {
+            "messages": [], "notice": "Agent is no longer running."}
+        print(json.dumps(result))
     else:
         configure_hooks(args.command == "uninstall-codex-hooks")
 

@@ -136,8 +136,9 @@ ordinary `codex` launches work without a wrapper or changes to daemon behavior.
 The optional view requires Python 3 (standard library only).
 
 Rows show status, provider, session/window/pane location, and directory. Enter
-focuses the exact pane, **Ctrl-R** refreshes, and the preview shows metadata plus
-recent pane output. Waiting agents sort before working and idle agents. Ctrl-D
+focuses the exact pane, **Ctrl-R** refreshes, and the preview shows a compact
+status header and recent conversation messages labelled **You** and **codex**.
+Waiting agents sort before working and idle agents. Ctrl-D
 does not kill agents; use the panes view for that. Lists refresh on entry and
 Ctrl-R; they do not poll continuously.
 
@@ -170,8 +171,14 @@ than guessing between them. A hook without a tmux server remains unassociated.
 Pane existence and process start time are rechecked to reject stale records.
 
 State lives under `${XDG_STATE_HOME:-$HOME/.local/state}/tmux-picker/agents`.
-Records contain metadata only; prompts, responses, and tool arguments are not
-saved. The hook prints no agent instructions and never makes approval decisions.
+Records contain metadata only, including the transcript path provided by Codex;
+prompts, responses, and tool arguments are not copied into picker state. The
+conversation preview reads that existing transcript on demand, using at most
+256 KiB of its tail and displaying the last eight user/assistant messages.
+Long messages are shortened; system/developer instructions, reasoning, and
+tool calls are omitted. Transcript formats are version-dependent, so an
+unavailable or unsupported transcript produces a notice instead of pane output.
+The hook prints no agent instructions and never makes approval decisions.
 
 Disable this first-party plugin, or a provider, in `init.lua`:
 
@@ -188,6 +195,8 @@ the uninstall command to stop recording status.
 
 Provider adapters live in `bin/agent_providers/`. Each exposes `matches(process)`
 and an `events` map translating native hook names into `(status, reason)` pairs.
+`conversation(record)` returns recent `{role, text}` messages and an optional
+availability notice for that provider's native conversation storage.
 Register a new adapter in `PROVIDERS`, and supply its native hook configuration;
 the shared discovery, storage, sorting, and Agents view need no provider-specific
 changes. `tmux-picker-agents hook <provider>` receives the adapter's event JSON

@@ -23,6 +23,11 @@ return {
 				if record.id == target then return record end
 			end
 		end
+		local function plain(text)
+			-- Transcript text must not inject terminal escapes into the preview.
+			return tostring(text or ""):gsub("\27%[[0-?]*[ -/]*[@-~]", "")
+				:gsub("[%z\1-\8\11-\31\127]", "")
+		end
 		local function list()
 			for _, record in ipairs(records()) do
 				local color = ({ waiting = config.colors.yellow, working = config.colors.green,
@@ -45,13 +50,27 @@ return {
 			preview = function(row)
 				local record = find(row.target)
 				if not record then io.write("Agent is no longer running\n"); return end
-				io.write(record.provider, " · ", util.clean_field(record.status), " · ", util.clean_field(record.reason), "\n",
-					util.clean_field(record.location), " · PID ", record.pid, "\n",
-					util.clean_field(record.cwd), "\n")
-				io.write("Status association: ", util.clean_field(record.association), "\n")
-				if record.session_id ~= "" then io.write("Session: ", util.clean_field(record.session_id), "\n") end
-				if record.updated_at > 0 then io.write("Updated: ", os.date("%Y-%m-%d %H:%M:%S", record.updated_at), "\n") end
-				io.write("\n", tmux.capture_pane(record.pane, -60) or "")
+				io.write(config.colors.green, "\27[1m", record.provider, " conversation", config.colors.reset,
+					"  · ", plain(record.status), "\n", config.colors.muted, plain(record.location),
+					"  · ", plain(record.cwd), config.colors.reset, "\n", plain(record.reason))
+				if record.updated_at > 0 then io.write(" · ", os.date("%H:%M:%S", record.updated_at)) end
+				io.write("\n")
+				if record.association == "unique directory (inferred)" then
+					io.write(config.colors.muted, "Session association inferred from directory", config.colors.reset, "\n")
+				end
+				local socket = util.trim(tmux.run("display-message -p '#{socket_path}'"))
+				local output = util.run("PATH=" .. util.shell_quote(config.path_prefix) .. " python3 "
+					.. util.shell_quote(config.root .. "/bin/tmux-picker-agents") .. " conversation --socket "
+					.. util.shell_quote(socket) .. " --target " .. util.shell_quote(row.target))
+				local conversation = ctx.json.decode(output or "") or {}
+				for _, message in ipairs(conversation.messages or {}) do
+					local user = message.role == "user"
+					io.write("\n", user and config.colors.blue or config.colors.green, "\27[1m",
+						user and "You" or record.provider, config.colors.reset, "\n", plain(message.text), "\n")
+				end
+				if #(conversation.messages or {}) == 0 then
+					io.write("\n", config.colors.muted, plain(conversation.notice or "Conversation unavailable"), config.colors.reset, "\n")
+				end
 			end,
 			kill = function() ctx.notify("agent rows cannot be killed; use the panes view") end,
 		})
