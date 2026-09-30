@@ -24,10 +24,12 @@ function M.configure()
 	local ok, options = pcall(dofile, path)
 	if not ok then
 		io.stderr:write("tmux-picker: ", path, ": ", tostring(options), "\n")
+		return false
 	elseif type(options) == "table" then
 		merge(config, options)
 	else
 		io.stderr:write("tmux-picker: ", path, " must return a table\n")
+		return false
 	end
 end
 
@@ -36,6 +38,7 @@ function M.plugins()
 		registry.load_plugins(config.bundled_plugin_dir, config.bundled_plugins)
 	end
 	registry.load_plugins(config.plugin_dir)
+	require("tmux_picker.packages").load(registry)
 end
 
 return M

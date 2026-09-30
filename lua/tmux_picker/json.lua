@@ -182,4 +182,33 @@ function M.read(path)
 	return M.decode(value)
 end
 
+function M.encode(value)
+	local kind = type(value)
+	if kind == "nil" then return "null" end
+	if kind == "boolean" or kind == "number" then return tostring(value) end
+	if kind == "string" then
+		return '"' .. value:gsub('[%z\1-\31\\"]', function(char)
+			if char == '"' or char == "\\" then return "\\" .. char end
+			return string.format("\\u%04x", char:byte())
+		end) .. '"'
+	end
+	if kind ~= "table" then error("cannot encode " .. kind) end
+	local array, count = true, 0
+	for key in pairs(value) do
+		count = count + 1
+		if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then array = false end
+	end
+	local parts = {}
+	if array and count == #value then
+		for _, child in ipairs(value) do parts[#parts + 1] = M.encode(child) end
+		return "[" .. table.concat(parts, ",") .. "]"
+	end
+	for key, child in pairs(value) do
+		if type(key) ~= "string" then error("JSON object keys must be strings") end
+		parts[#parts + 1] = M.encode(key) .. ":" .. M.encode(child)
+	end
+	table.sort(parts)
+	return "{" .. table.concat(parts, ",") .. "}"
+end
+
 return M

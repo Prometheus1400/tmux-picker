@@ -37,6 +37,8 @@ local function add_error(message)
 	io.stderr:write("tmux-picker: ", message, "\n")
 end
 
+M.report_error = add_error
+
 local function claim(store, id, value, label)
 	if type(id) ~= "string" or id == "" then
 		error(label .. " id is required")

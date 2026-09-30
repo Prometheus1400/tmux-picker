@@ -8,6 +8,9 @@ M.runtime_dir = os.getenv("XDG_RUNTIME_DIR") or os.getenv("TMPDIR") or "/tmp"
 M.root = os.getenv("TMUX_PICKER_ROOT") or ""
 M.bundled_plugin_dir = M.root .. "/plugins"
 M.plugin_dir = os.getenv("TMUX_PICKER_PLUGIN_DIR") or (M.config_home .. "/tmux-picker/plugins")
+M.managed_plugin_dir = (os.getenv("XDG_DATA_HOME") or (M.home .. "/.local/share")) .. "/tmux-picker/plugins"
+M.plugins = {}
+M.plugins_update_interval = 86400
 M.bundled_plugins = { zoxide = true, agents = true }
 M.agents = { providers = { codex = true } }
 

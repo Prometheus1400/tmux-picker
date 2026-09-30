@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""Internal declarative Git reconciler; request and response are JSON on stdio."""
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+
+def git(path, *args):
+    command = ["git", "-c", "core.hooksPath=/dev/null"]
+    if path is not None:
+        command += ["-C", str(path)]
+    result = subprocess.run(command + list(args), text=True, capture_output=True, timeout=30,
+                            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Git command failed")
+    return result.stdout.strip()
+
+
+def valid_name(name):
+    return isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name)
+
+
+def validate(specs):
+    if not isinstance(specs, list):
+        raise ValueError("plugins must be a list")
+    seen = set()
+    for spec in specs:
+        if not isinstance(spec, dict) or not valid_name(spec.get("name")):
+            raise ValueError("invalid managed plugin name")
+        if spec["name"] in seen:
+            raise ValueError("duplicate managed plugin name")
+        seen.add(spec["name"])
+        entry = spec.get("entry", "plugin.lua")
+        if not isinstance(entry, str) or Path(entry).is_absolute() or ".." in Path(entry).parts or not entry.endswith(".lua"):
+            raise ValueError("plugin entry must be a relative .lua file")
+        if not isinstance(spec.get("repo"), str) or not spec["repo"] or spec["repo"].startswith("-"):
+            raise ValueError("invalid plugin repository")
+        version = spec.get("version")
+        if version is not None and (not isinstance(version, str) or not version or version.startswith("-")):
+            raise ValueError("invalid plugin version")
+
+
+def remote(repo):
+    if re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
+        return "https://github.com/" + repo.removesuffix(".git") + ".git"
+    return repo
+
+
+def target(path, version):
+    if not version:
+        git(path, "remote", "set-head", "origin", "-a")
+        ref = git(path, "symbolic-ref", "refs/remotes/origin/HEAD")
+        return git(path, "rev-parse", "--verify", ref + "^{commit}"), True
+    for ref, tracking in (("refs/tags/" + version, False), ("refs/remotes/origin/" + version, True)):
+        try:
+            return git(path, "rev-parse", "--verify", ref + "^{commit}"), tracking
+        except RuntimeError:
+            pass
+    if re.fullmatch(r"[a-fA-F0-9]{7,40}", version):
+        return git(path, "rev-parse", "--verify", version + "^{commit}"), False
+    raise RuntimeError("version not found: " + version)
+
+
+def entry_file(path, entry):
+    resolved = (path / entry).resolve()
+    if not resolved.is_relative_to(path.resolve()) or not resolved.is_file():
+        raise RuntimeError("missing or escaping plugin entry: " + entry)
+
+
+def clean(path):
+    if path.is_symlink():
+        raise RuntimeError("refusing a symlinked managed checkout")
+    if not (path / ".git").is_dir():
+        raise RuntimeError("managed checkout is not a Git repository")
+    if git(path, "status", "--porcelain", "--untracked-files=all", "--ignored"):
+        raise RuntimeError("local changes preserved; cannot update or remove checkout")
+
+
+def checkout(path, spec):
+    commit, tracking = target(path, spec.get("version"))
+    previous = git(path, "rev-parse", "HEAD")
+    try:
+        git(path, "checkout", "--detach", commit)
+        entry_file(path, spec["entry"])
+    except Exception:
+        git(path, "checkout", "--detach", previous)
+        raise
+    return {**spec, "commit": commit, "tracking": tracking, "checked_at": time.time()}
+
+
+def clone(root, spec):
+    temporary = Path(tempfile.mkdtemp(dir=root, prefix=".clone-"))
+    try:
+        git(None, "clone", "--", remote(spec["repo"]), str(temporary))
+        record = checkout(temporary, spec)
+        return temporary, record
+    except Exception:
+        shutil.rmtree(temporary)
+        raise
+
+
+def save_index(root, packages, errors):
+    fd, name = tempfile.mkstemp(dir=root, prefix=".index-")
+    try:
+        with os.fdopen(fd, "w") as stream:
+            json.dump({"version": 1, "packages": packages, "errors": errors}, stream)
+            stream.write("\n")
+        os.replace(name, root / "index.json")
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+def reconcile(request):
+    specs = request["specs"]
+    validate(specs)  # Validate the entire configuration before any mutation.
+    root = Path(request["directory"])
+    if not root.is_absolute() or root.is_symlink():
+        raise ValueError("managed plugin directory must be an absolute, non-symlink path")
+    interval = request.get("update_interval", 86400)
+    if not isinstance(interval, (int, float)) or interval < 0:
+        raise ValueError("plugins_update_interval must be a nonnegative number")
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / ".lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return {"ok": True}  # Another picker is already reconciling.
+        index_path = root / "index.json"
+        index = json.loads(index_path.read_text()) if index_path.exists() else {"version": 1, "packages": []}
+        if index.get("version") != 1 or not isinstance(index.get("packages"), list):
+            raise ValueError("unsupported managed plugin index")
+        installed = {}
+        for record in index["packages"]:
+            if not isinstance(record, dict) or not valid_name(record.get("name")):
+                raise ValueError("invalid managed plugin index")
+            installed[record["name"]] = record
+        desired = {spec["name"]: spec for spec in specs}
+        errors = []
+        for name in list(installed):
+            if name not in desired:
+                try:
+                    path = root / name
+                    if path.exists() or path.is_symlink():
+                        clean(path)
+                        shutil.rmtree(path)
+                    del installed[name]
+                except Exception as error:
+                    errors.append(name + ": " + str(error))
+        for name, spec in desired.items():
+            if not spec.get("enabled", True):
+                continue
+            path = root / name
+            previous = installed.get(name)
+            staged = None
+            try:
+                if not previous or not path.exists():
+                    if path.exists() or path.is_symlink():
+                        raise RuntimeError("unmanaged path already exists; leaving it untouched")
+                    staged, record = clone(root, spec)
+                    os.replace(staged, path)
+                    installed[name] = record
+                elif previous["repo"] != spec["repo"]:
+                    clean(path)
+                    staged, record = clone(root, spec)
+                    shutil.rmtree(path)
+                    os.replace(staged, path)
+                    installed[name] = record
+                else:
+                    changed = any(previous.get(key) != spec.get(key) for key in ("entry", "version"))
+                    due = previous.get("tracking", True) and time.time() - previous.get("checked_at", 0) >= interval
+                    if changed or due:
+                        clean(path)
+                        git(path, "fetch", "--prune", "--tags", "origin")
+                        installed[name] = checkout(path, spec)
+                    else:
+                        entry_file(path, spec["entry"])
+                        if previous.get("last_error"):
+                            errors.append(name + ": " + previous["last_error"])
+            except Exception as error:
+                errors.append(name + ": " + str(error))
+                if previous and all(previous.get(key) == spec.get(key) for key in ("repo", "entry", "version")):
+                    installed[name] = {**previous, "checked_at": time.time(), "last_error": str(error)}
+            finally:
+                if staged and staged.exists():
+                    shutil.rmtree(staged)
+        save_index(root, list(installed.values()), errors)
+        return {"ok": True, "errors": errors}
+
+
+if __name__ == "__main__":
+    try:
+        print(json.dumps(reconcile(json.load(sys.stdin))))
+    except Exception as error:
+        print(json.dumps({"ok": False, "error": str(error)}))

@@ -202,7 +202,53 @@ the shared discovery, storage, sorting, and Agents view need no provider-specifi
 changes. `tmux-picker-agents hook <provider>` receives the adapter's event JSON
 on stdin. The initial hook setup command is Codex-specific.
 
-### Plugin API
+### Third-party plugins
+
+Declare Git repositories in `~/.config/tmux-picker/init.lua`. Opening the picker
+reconciles the declarations automatically; there are no install/update commands:
+
+```lua
+return {
+  plugins = {
+    "owner/example-picker-plugin", -- GitHub shorthand; loads plugin.lua
+    {
+      repo = "https://github.com/owner/another-plugin.git",
+      name = "another",             -- optional; defaults to repository basename
+      entry = "plugins/main.lua",   -- optional; defaults to plugin.lua
+      version = "v1.2.0",            -- optional: tag, commit SHA, or branch
+      enabled = true,               -- false prevents loading and synchronization
+    },
+  },
+  plugins_update_interval = 86400,   -- seconds between branch update checks
+}
+```
+
+Use an SSH Git URL or an absolute local repository path instead of GitHub
+shorthand if needed. This is for repositories implementing the picker plugin API,
+not arbitrary TPM plugins. Git and Python 3 are required for reconciliation.
+
+Missing enabled repositories are cloned under
+`${XDG_DATA_HOME:-$HOME/.local/share}/tmux-picker/plugins`. Changing the repo,
+entry, or version applies on the next open. Tags and commit SHAs stay pinned;
+an omitted version tracks the repository's default branch, and named branches
+track that branch. Branch updates are checked once per day by default. Set the
+interval to `0` to check on every open. Network access happens only when opening
+the picker, never in list, preview, or action subprocesses.
+
+Set `enabled = false` to retain an installed checkout without evaluating its
+entry file or fetching updates. Disabled declarations that aren't installed
+aren't cloned. Remove a declaration to remove its managed checkout on the next
+open. Local changes and untracked files block updates/removal and are preserved.
+Failed updates retain the prior working checkout, so offline use can continue.
+Missing or changed pins that cannot be resolved don't load an incompatible copy.
+The picker reports synchronization errors through `doctor`.
+
+Managed entries load in declaration order after bundled and manually installed
+plugins. Existing `.lua` files in `~/.config/tmux-picker/plugins` continue to work
+and are never managed or removed. `TMUX_PICKER_DISABLE_PLUGINS=1` also disables
+reconciliation. Repositories are trusted Lua code running with picker permissions.
+
+### Writing plugins
 
 First-party plugins bundled in `plugins/` load before every `*.lua` file under
 `${XDG_CONFIG_HOME:-$HOME/.config}/tmux-picker/plugins`. Files in each

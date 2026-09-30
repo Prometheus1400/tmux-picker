@@ -1,5 +1,11 @@
 local loader = require("tmux_picker.loader")
-loader.configure()
+local configured = loader.configure()
+
+local subprocess_commands = {list=true, current=true, preview=true, ["switch-view"]=true, action=true,
+	["fzf-enter"]=true, ["fzf-escape"]=true, kill=true, doctor=true}
+if configured ~= false and not subprocess_commands[arg[1] or ""] then
+	require("tmux_picker.packages").sync()
+end
 
 local config = require("tmux_picker.config")
 local picker = require("tmux_picker.picker")
