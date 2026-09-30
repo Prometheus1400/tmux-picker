@@ -5,6 +5,8 @@ M.home = os.getenv("HOME") or ""
 M.config_home = os.getenv("XDG_CONFIG_HOME") or (M.home .. "/.config")
 M.state_home = os.getenv("XDG_STATE_HOME") or (M.home .. "/.local/state")
 M.runtime_dir = os.getenv("XDG_RUNTIME_DIR") or os.getenv("TMPDIR") or "/tmp"
+M.root = os.getenv("TMUX_PICKER_ROOT") or ""
+M.bundled_plugin_dir = M.root .. "/plugins"
 M.plugin_dir = os.getenv("TMUX_PICKER_PLUGIN_DIR") or (M.config_home .. "/tmux-picker/plugins")
 
 M.size = "70%,80%"
@@ -26,7 +28,6 @@ M.colors = {
 M.icons = {
 	git = "󰘬",
 	session = "",
-	zoxide = "󰉋",
 	window = "",
 	pane = "",
 }

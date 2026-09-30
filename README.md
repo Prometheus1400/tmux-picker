@@ -1,14 +1,13 @@
 # tmux-picker
 
-An extensible fzf popup for navigating tmux sessions, zoxide directories,
-windows, and panes.
+An extensible fzf popup for navigating tmux sessions, windows, and panes.
 
 ## Requirements
 
 - tmux
 - fzf with popup support
 - Lua 5.1+ or LuaJIT
-- zoxide (optional; its view is empty when unavailable)
+- zoxide (optional first-party plugin)
 
 Run `tmux-picker doctor` to check required commands and plugin load errors.
 
@@ -57,10 +56,14 @@ return {
 
 ## Plugins
 
-Every `*.lua` file under
-`${XDG_CONFIG_HOME:-$HOME/.config}/tmux-picker/plugins` is loaded in filename
-order. Plugins are trusted code and run with the same permissions as the
-picker.
+First-party plugins bundled in `plugins/` load before every `*.lua` file under
+`${XDG_CONFIG_HOME:-$HOME/.config}/tmux-picker/plugins`. Files in each
+directory load in filename order. Plugins are trusted code and run with the
+same permissions as the picker.
+
+The bundled `zoxide.lua` plugin adds the Ctrl-X view and appends zoxide
+directories to the sessions view when the `zoxide` executable is available.
+The tmux-only core works without it.
 
 A plugin returns a descriptor:
 

@@ -32,6 +32,7 @@ function M.configure()
 end
 
 function M.plugins()
+	registry.load_plugins(config.bundled_plugin_dir)
 	registry.load_plugins(config.plugin_dir)
 end
 

@@ -73,17 +73,4 @@ function M.list_tmux(options)
 	end
 end
 
-function M.list_zoxide()
-	local command = "PATH=" .. util.shell_quote(config.path_prefix) .. " zoxide query -l 2>/dev/null"
-	for _, path in ipairs(util.lines(command)) do
-		util.emit({
-			kind = "session",
-			target = path,
-			name = config.colors.teal .. config.icons.zoxide .. "\27[39m " .. path,
-			source = "zoxide",
-			extra = "",
-		})
-	end
-end
-
 return M

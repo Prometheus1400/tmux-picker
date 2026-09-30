@@ -24,16 +24,10 @@ end
 
 local function list_sessions()
 	sessions.list_tmux()
-	sessions.list_zoxide()
 	registry.emit_supplements("sessions", {
 		emit = util.emit,
 		allowed_sessions = sessions.allowed(),
 	})
-end
-
-local function list_zoxide()
-	sessions.list_zoxide()
-	registry.emit_supplements("zoxide", { emit = util.emit })
 end
 
 local function list_windows()
@@ -303,16 +297,6 @@ function M.register()
 		chord = "C-t",
 		prompt = config.icons.session .. "  ",
 		list = list_sessions,
-		query = sessions.connect,
-	})
-	registry.register_view({
-		id = "zoxide",
-		order = 30,
-		label = "zoxide",
-		key = "ctrl-x",
-		chord = "C-x",
-		prompt = config.icons.zoxide .. "  ",
-		list = list_zoxide,
 		query = sessions.connect,
 	})
 	registry.register_view({
