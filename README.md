@@ -129,7 +129,7 @@ native tmux border; configure that with `set -g popup-border-style`.
 
 ### Agents view
 
-The bundled `agents` plugin adds **Ctrl-G** to discover coding agents running
+The bundled `agents` plugin adds **Ctrl-E** to discover coding agents running
 inside panes on the current tmux server. Codex is the first supported provider.
 It takes one process snapshot and walks descendants of each pane's shell;
 ordinary `codex` launches work without a wrapper or changes to daemon behavior.

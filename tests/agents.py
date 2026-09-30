@@ -103,7 +103,7 @@ local emitted = {}
 util.emit = function(row) emitted[#emitted + 1] = row end
 assert(registry.load_plugin(config.root .. "/plugins/agents.lua"))
 local view = assert(registry.view("agents"))
-assert(view.key == "ctrl-g")
+assert(view.key == "ctrl-e")
 view.list()
 assert(#emitted == 1 and emitted[1].target == "identity")
 local kind = assert(registry.kind("agent"))
