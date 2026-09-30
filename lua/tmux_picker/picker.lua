@@ -22,6 +22,7 @@ function M.legend(active_id, notice)
 			items[#items + 1] = text
 		end
 	end
+	items[#items + 1] = config.colors.muted .. "·" .. config.colors.reset
 	items[#items + 1] = config.colors.muted .. "C-d kill" .. config.colors.reset
 	local view = registry.view(active_id)
 	for _, binding in ipairs(view and view.keys or {}) do
