@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -eu
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+LUA_BIN="$(command -v luajit || command -v lua)"
+
+export TMUX_PICKER_ROOT="$ROOT"
+export LUA_PATH="${ROOT}/lua/?.lua;${ROOT}/lua/?/init.lua;;"
+
+"$LUA_BIN" "${ROOT}/tests/run.lua"
+bash -n "${ROOT}/bin/tmux-picker"
+bash -n "${ROOT}/tmux-picker.tmux"

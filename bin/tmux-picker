@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -eu
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in
+    /*) ;;
+    *) SOURCE="${SOURCE_DIR}/${SOURCE}" ;;
+  esac
+done
+
+BIN_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+ROOT="${TMUX_PICKER_ROOT:-$(cd "${BIN_DIR}/.." && pwd)}"
+SELF="${BIN_DIR}/$(basename "$SOURCE")"
+PATH="/opt/homebrew/bin:/usr/local/bin:${HOME}/go/bin:${HOME}/.nix-profile/bin:${PATH:-/usr/bin}"
+
+LUA_BIN="$(command -v luajit || command -v lua || true)"
+if [ -z "$LUA_BIN" ]; then
+  message="tmux-picker: luajit or lua not found"
+  tmux display-message -d 10000 "$message" 2>/dev/null || true
+  printf '%s\n' "$message" >&2
+  exit 1
+fi
+
+export TMUX_PICKER_ROOT="$ROOT"
+export TMUX_PICKER_CMD="$SELF"
+export LUA_PATH="${ROOT}/lua/?.lua;${ROOT}/lua/?/init.lua;;"
+
+ERROR_LOG="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/tmux-picker.error"
+rm -f "$ERROR_LOG"
+if ! "$LUA_BIN" "${ROOT}/lua/tmux_picker/main.lua" "$@" 2>"$ERROR_LOG"; then
+  error="$(tail -n 1 "$ERROR_LOG" 2>/dev/null || true)"
+  tmux display-message -d 10000 "tmux-picker: ${error:-picker failed}" 2>/dev/null || true
+  [ -n "$error" ] && printf '%s\n' "$error" >&2
+  exit 1
+fi
