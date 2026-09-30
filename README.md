@@ -72,6 +72,14 @@ bind-key o run-shell '~/.local/share/tmux-picker/bin/tmux-picker'
 The launcher discovers all Lua modules relative to itself, so the package
 does not need to be on `PATH`.
 
+## Window previews
+
+The windows view (Ctrl-W) previews the pane split layout, labelled with each
+pane's index and current process. `*` and green labels mark the active pane.
+The diagram scales to fit the preview; full process names, sizes, and paths
+remain listed below it. Zoomed windows show their full saved layout. Very
+small previews fall back to the pane details.
+
 ## Configuration
 
 Optional settings live in

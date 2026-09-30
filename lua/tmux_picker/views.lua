@@ -1,5 +1,6 @@
 local config = require("tmux_picker.config")
 local git = require("tmux_picker.git")
+local layout = require("tmux_picker.layout")
 local registry = require("tmux_picker.registry")
 local sessions = require("tmux_picker.sessions")
 local tmux = require("tmux_picker.tmux")
@@ -222,22 +223,33 @@ local function preview_pane(id)
 end
 
 local function preview_window(id)
-	local info = tmux.info(id, "#{session_name}\t#{window_index}\t#{window_name}\t#{window_active}")
-	if not info then
+	local info = tmux.info(
+		id,
+		"#{session_name}\t#{window_index}\t#{window_name}\t#{window_active}\t"
+			.. "#{window_layout}\t#{window_zoomed_flag}"
+	)
+	if not info or info == "" then
 		io.write(config.colors.peach, "window unavailable", config.colors.reset, "\n")
 		return
 	end
-	local session, index, name, active = util.split_tab(info, 4)
+	local session, index, name, active, saved_layout, zoomed = util.split_tab(info, 6)
 	local marker = active == "1" and (config.colors.green .. "●" .. config.colors.reset) or "○"
-	io.write(marker, " ", config.colors.green, window_location(session, index, name), config.colors.reset, "\n")
+	io.write(
+		marker,
+		" ",
+		config.colors.green,
+		window_location(session, index, name),
+		config.colors.reset,
+		zoomed == "1" and " (zoomed)" or "",
+		"\n"
+	)
+	local panes = {}
 	for _, line in
-		ipairs(
-			tmux.list_window_panes(
-				id,
-				"#{pane_index}\t#{pane_id}\t#{pane_active}\t#{pane_current_command}\t"
-					.. "#{pane_width}x#{pane_height}\t#{pane_current_path}"
-			)
-		)
+		ipairs(tmux.list_window_panes(
+			id,
+			"#{pane_index}\t#{pane_id}\t#{pane_active}\t#{pane_current_command}\t"
+				.. "#{pane_width}x#{pane_height}\t#{pane_current_path}"
+		))
 	do
 		local pane, pane_id, pane_active, command, size, path = util.split_tab(line, 6)
 		command = registry.decorate("command", command or "", {
@@ -245,19 +257,35 @@ local function preview_window(id)
 			pane_id = pane_id,
 			path = path,
 		})
-		local pane_marker = pane_active == "1" and (config.colors.green .. "▸" .. config.colors.reset) or " "
+		panes[#panes + 1] = {
+			index = pane,
+			id = pane_id,
+			active = pane_active,
+			command = command,
+			size = size,
+			path = path,
+		}
+	end
+	local columns = tonumber(os.getenv("FZF_PREVIEW_COLUMNS")) or 80
+	local lines = math.min(16, (tonumber(os.getenv("FZF_PREVIEW_LINES")) or 24) - 2)
+	local diagram = layout.render(saved_layout, panes, columns, lines)
+	if diagram then
+		io.write("\n", diagram, "\n")
+	end
+	for _, pane in ipairs(panes) do
+		local pane_marker = pane.active == "1" and (config.colors.green .. "▸" .. config.colors.reset) or " "
 		io.write(
 			"\n  ",
 			pane_marker,
 			" pane ",
-			pane or "",
+			pane.index or "",
 			"  ",
-			command,
+			pane.command,
 			"  ",
-			size or "",
+			pane.size or "",
 			"\n    ",
-			path or "",
-			git.decorate(git.ref(path)),
+			pane.path or "",
+			git.decorate(git.ref(pane.path)),
 			"\n"
 		)
 	end

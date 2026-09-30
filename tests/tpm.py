@@ -90,6 +90,20 @@ with tempfile.TemporaryDirectory(prefix="tmux-picker-tpm-") as temporary:
         assert "ok      tmux" in run("sh", "-c", command + " doctor")
         assert "session\t" in run("sh", "-c", command + " list sessions")
 
+        # Preview real nested splits and preserve the layout while zoomed.
+        original_pane = tmux("display-message", "-p", "-t", "test", "#{pane_id}")
+        window_id = tmux("display-message", "-p", "-t", "test", "#{window_id}")
+        right_pane = tmux("split-window", "-h", "-t", original_pane, "-P", "-F", "#{pane_id}", "sleep 60")
+        tmux("split-window", "-v", "-t", right_pane, "sleep 60")
+        preview_command = "FZF_PREVIEW_COLUMNS=60 FZF_PREVIEW_LINES=16 " + command + " preview window " + window_id
+        preview = run("sh", "-c", preview_command)
+        assert "┬" in preview and "├" in preview, "Nested split layout missing from preview"
+        assert "sleep" in preview, "Pane process names missing from preview"
+        tmux("resize-pane", "-Z", "-t", original_pane)
+        preview = run("sh", "-c", preview_command)
+        assert "(zoomed)" in preview and "┬" in preview and "├" in preview
+        tmux("resize-pane", "-Z", "-t", original_pane)
+
         # Exercise the documented user configuration through the real launcher.
         config_dir = home / "config/tmux-picker"
         user_plugins = config_dir / "plugins"
@@ -124,6 +138,6 @@ with tempfile.TemporaryDirectory(prefix="tmux-picker-tpm-") as temporary:
         tmux("set-option", "-g", "@tmux-picker-key", "")
         run("bash", str(installed / "tmux-picker.tmux"))
         assert "user binding" in binding("o")
-        print("TPM integration tests passed: install, bindings, reload, relocation, overrides, plugin selection")
+        print("TPM integration tests passed: install, bindings, reload, relocation, overrides, plugin selection, layouts")
     finally:
         subprocess.run(["tmux", "-L", socket, "kill-server"], env=env, capture_output=True)
