@@ -61,9 +61,8 @@ First-party plugins bundled in `plugins/` load before every `*.lua` file under
 directory load in filename order. Plugins are trusted code and run with the
 same permissions as the picker.
 
-The bundled `zoxide.lua` plugin adds the Ctrl-X view and appends zoxide
-directories to the sessions view when the `zoxide` executable is available.
-The tmux-only core works without it.
+The bundled `zoxide.lua` plugin adds a dedicated Ctrl-X view when the `zoxide`
+executable is available. The tmux-only core works without it.
 
 A plugin returns a descriptor:
 

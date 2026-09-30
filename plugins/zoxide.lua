@@ -35,7 +35,5 @@ return {
 			list = list,
 			query = sessions.connect,
 		})
-
-		ctx.register_supplement("sessions", list)
 	end,
 }
