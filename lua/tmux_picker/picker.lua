@@ -25,11 +25,13 @@ function M.legend(active_id, notice)
 	items[#items + 1] = config.colors.muted .. "C-d kill" .. config.colors.reset
 	local view = registry.view(active_id)
 	for _, binding in ipairs(view and view.keys or {}) do
-		items[#items + 1] = config.colors.muted
-			.. (binding.chord or binding.key)
-			.. " "
-			.. (binding.label or binding.action)
-			.. config.colors.reset
+		if not binding.hidden then
+			items[#items + 1] = config.colors.muted
+				.. (binding.chord or binding.key)
+				.. " "
+				.. (binding.label or binding.action)
+				.. config.colors.reset
+		end
 	end
 	local legend = "  " .. table.concat(items, "  ")
 	if notice and notice ~= "" then
@@ -102,14 +104,20 @@ function M.open(view_id, self_command)
 		"--bind " .. quote("ctrl-d:execute-silent(" .. self_q .. " kill {1} {2})+reload(" .. self_q .. " current)"),
 	}
 
+	local action_keys = {}
 	for _, candidate in ipairs(registry.views()) do
 		if candidate.key then
 			binds[#binds + 1] = "--bind "
 				.. quote(candidate.key .. ":transform:" .. self_q .. " switch-view " .. quote(candidate.id))
 		end
 		for _, binding in ipairs(candidate.keys or {}) do
-			binds[#binds + 1] = "--bind "
-				.. quote(binding.key .. ":transform:" .. self_q .. " action " .. quote(binding.action) .. " {1} {2}")
+			if not action_keys[binding.key] then
+				action_keys[binding.key] = true
+				binds[#binds + 1] = "--bind "
+					.. quote(
+						binding.key .. ":transform:" .. self_q .. " action " .. quote(binding.action) .. " {1} {2}"
+					)
+			end
 		end
 	end
 

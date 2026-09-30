@@ -95,8 +95,8 @@ elseif command == "fzf-enter" then
 	io.write(result and picker.render_action(result, current_view(), self_command) or "accept", "\n")
 	os.exit(0)
 elseif command == "fzf-escape" then
-	registry.run_hooks("escape")
-	io.write("abort\n")
+	local result = registry.run_hooks("escape")
+	io.write(result and picker.render_action(result, current_view(), self_command) or "abort", "\n")
 	os.exit(0)
 elseif command == "kill" then
 	local kind = arg[2] or ""
