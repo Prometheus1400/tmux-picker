@@ -32,7 +32,9 @@ function M.configure()
 end
 
 function M.plugins()
-	registry.load_plugins(config.bundled_plugin_dir)
+	if config.bundled_plugins ~= false then
+		registry.load_plugins(config.bundled_plugin_dir, config.bundled_plugins)
+	end
 	registry.load_plugins(config.plugin_dir)
 end
 

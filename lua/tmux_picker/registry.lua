@@ -225,7 +225,7 @@ function M.load_plugin(path)
 	return true
 end
 
-function M.load_plugins(directory)
+function M.load_plugins(directory, enabled_plugins)
 	if os.getenv("TMUX_PICKER_DISABLE_PLUGINS") == "1" or not util.is_dir(directory) then
 		return
 	end
@@ -233,7 +233,10 @@ function M.load_plugins(directory)
 	local paths = util.lines(command)
 	table.sort(paths)
 	for _, path in ipairs(paths) do
-		M.load_plugin(path)
+		local name = path:match("([^/]+)%.lua$")
+		if type(enabled_plugins) ~= "table" or enabled_plugins[name] ~= false then
+			M.load_plugin(path)
+		end
 	end
 end
 

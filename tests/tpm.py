@@ -90,6 +90,29 @@ with tempfile.TemporaryDirectory(prefix="tmux-picker-tpm-") as temporary:
         assert "ok      tmux" in run("sh", "-c", command + " doctor")
         assert "session\t" in run("sh", "-c", command + " list sessions")
 
+        # Exercise the documented user configuration through the real launcher.
+        config_dir = home / "config/tmux-picker"
+        user_plugins = config_dir / "plugins"
+        user_plugins.mkdir(parents=True)
+        shutil.copy2(ROOT / "tests/fixtures/example.lua", user_plugins / "example.lua")
+        zoxide = home / "go/bin/zoxide"
+        zoxide.parent.mkdir(parents=True)
+        zoxide.write_text('#!/bin/sh\nprintf "/tmp\\n"\n')
+        zoxide.chmod(0o755)
+        user_config = config_dir / "init.lua"
+        user_config.write_text("return { bundled_plugins = { zoxide = false } }\n")
+        assert run("sh", "-c", command + " switch-view zoxide") == "ignore"
+        assert "reload(" in run("sh", "-c", command + " switch-view example")
+        user_config.write_text("return { bundled_plugins = { zoxide = true } }\n")
+        assert "reload(" in run("sh", "-c", command + " switch-view zoxide")
+        user_config.write_text("return { bundled_plugins = false }\n")
+        assert run("sh", "-c", command + " switch-view zoxide") == "ignore"
+        assert "reload(" in run("sh", "-c", command + " switch-view example")
+        env["TMUX_PICKER_DISABLE_PLUGINS"] = "1"
+        assert run("sh", "-c", command + " switch-view example") == "ignore"
+        assert "reload(" in run("sh", "-c", command + " switch-view windows")
+        env.pop("TMUX_PICKER_DISABLE_PLUGINS")
+
         custom = "printf custom-launcher"
         tmux("set-option", "-g", "@tmux-picker-command", custom)
         run("bash", str(installed / "tmux-picker.tmux"))
@@ -101,6 +124,6 @@ with tempfile.TemporaryDirectory(prefix="tmux-picker-tpm-") as temporary:
         tmux("set-option", "-g", "@tmux-picker-key", "")
         run("bash", str(installed / "tmux-picker.tmux"))
         assert "user binding" in binding("o")
-        print("TPM integration tests passed: install, bindings, reload, relocation, overrides")
+        print("TPM integration tests passed: install, bindings, reload, relocation, overrides, plugin selection")
     finally:
         subprocess.run(["tmux", "-L", socket, "kill-server"], env=env, capture_output=True)

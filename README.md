@@ -82,6 +82,7 @@ return {
   size = "70%,80%",
   preview_window = "up,55%",
   hidden_sessions = { scratch = true },
+  bundled_plugins = { zoxide = true },
 }
 ```
 
@@ -94,6 +95,24 @@ same permissions as the picker.
 
 The bundled `zoxide.lua` plugin adds a dedicated Ctrl-X view when the `zoxide`
 executable is available. The tmux-only core works without it.
+
+Bundled plugins are enabled by default. Opt out of an individual plugin in
+`~/.config/tmux-picker/init.lua` (or the equivalent under `XDG_CONFIG_HOME`):
+
+```lua
+return {
+  bundled_plugins = { zoxide = false },
+}
+```
+
+Set `zoxide = true` to opt back in; its executable must still be available on
+the picker's PATH. Names are the bundled Lua filenames without `.lua`. Omitted
+names remain enabled. A disabled plugin's file is not evaluated.
+
+Set `bundled_plugins = false` to disable all bundled plugins while continuing
+to load your user plugins. These settings apply the next time the picker opens.
+`TMUX_PICKER_DISABLE_PLUGINS=1` takes precedence and disables both bundled and
+user plugins.
 
 A plugin returns a descriptor:
 
