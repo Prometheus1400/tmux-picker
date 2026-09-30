@@ -1,5 +1,6 @@
 """Exercise real TPM installation in an isolated tmux server."""
 import os
+import json
 from pathlib import Path
 import shlex
 import shutil
@@ -127,6 +128,37 @@ with tempfile.TemporaryDirectory(prefix="tmux-picker-tpm-") as temporary:
         assert "reload(" in run("sh", "-c", command + " switch-view windows")
         env.pop("TMUX_PICKER_DISABLE_PLUGINS")
 
+        # Capture the actual fzf environment and arguments from a picker launch.
+        fake_fzf = home / "go/bin/fzf"
+        fake_fzf.write_text(
+            '#!/bin/sh\n'
+            'printf "%s\\n" "$FZF_DEFAULT_OPTS" > "$XDG_RUNTIME_DIR/fzf-options"\n'
+            'printf "%s\\n" "$@" > "$XDG_RUNTIME_DIR/fzf-arguments"\n'
+            'cat >/dev/null\n'
+        )
+        fake_fzf.chmod(0o755)
+        test_path = str(fake_fzf.parent) + ":" + env["PATH"]
+        base_config = "return { bundled_plugins = false, path_prefix = " + json.dumps(test_path)
+        user_config.write_text(base_config + " }\n")
+        env.pop("FZF_DEFAULT_OPTS", None)
+        env.pop("FZF_DEFAULT_OPTS_FILE", None)
+        run("sh", "-c", command)
+        assert (home / "fzf-options").read_text().rstrip("\n") == "--color=16 "
+        assert "--color" not in (home / "fzf-arguments").read_text().splitlines()
+        theme = "--color=border:#ebbcba,preview-border:#31748f"
+        env["FZF_DEFAULT_OPTS"] = theme
+        run("sh", "-c", command)
+        assert (home / "fzf-options").read_text().rstrip("\n") == "--color=16 " + theme
+        options_file = home / "theme-options"
+        options_file.write_text("--color=light\n")
+        env["FZF_DEFAULT_OPTS_FILE"] = str(options_file)
+        run("sh", "-c", command)
+        assert (home / "fzf-options").read_text().strip() == theme
+        user_config.write_text(base_config + ', fzf_colors = "border:#c4a7e7" }\n')
+        run("sh", "-c", command)
+        arguments = (home / "fzf-arguments").read_text().splitlines()
+        assert arguments[arguments.index("--color") + 1] == "border:#c4a7e7"
+
         custom = "printf custom-launcher"
         tmux("set-option", "-g", "@tmux-picker-command", custom)
         run("bash", str(installed / "tmux-picker.tmux"))
@@ -138,6 +170,6 @@ with tempfile.TemporaryDirectory(prefix="tmux-picker-tpm-") as temporary:
         tmux("set-option", "-g", "@tmux-picker-key", "")
         run("bash", str(installed / "tmux-picker.tmux"))
         assert "user binding" in binding("o")
-        print("TPM integration tests passed: install, bindings, reload, relocation, overrides, plugin selection, layouts")
+        print("TPM integration tests passed: install, bindings, reload, relocation, overrides, plugin selection, layouts, colors")
     finally:
         subprocess.run(["tmux", "-L", socket, "kill-server"], env=env, capture_output=True)

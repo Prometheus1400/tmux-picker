@@ -94,6 +94,37 @@ return {
 }
 ```
 
+### Colors
+
+Picker labels and previews use the terminal's ANSI palette by default. They
+follow terminal themes such as Rose Pine without fixed RGB colors. The native
+popup border follows your tmux `popup-border-style`.
+
+fzf starts with its 16-color scheme before applying `FZF_DEFAULT_OPTS`, so your
+existing fzf theme takes precedence. If `FZF_DEFAULT_OPTS_FILE` is set, its
+options are respected without adding a scheme. tmux must receive these
+environment variables when it starts, or through `tmux set-environment`.
+
+Override individual label/preview colors in `init.lua`; omitted colors retain
+their defaults. Values are ANSI escape sequences, and `""` disables a color:
+
+```lua
+return {
+  colors = {
+    blue = "\27[34m", -- terminal blue
+    muted = "\27[90m", -- terminal bright black
+    teal = "\27[38;2;156;207;216m", -- explicit RGB, if desired
+  },
+  -- Optional fzf colors for this picker; overrides matching global fzf colors.
+  fzf_colors = "border:#ebbcba,label:#ebbcba,preview-border:#31748f",
+}
+```
+
+Color keys are `muted`, `green`, `peach` (terminal red), `blue`, `teal` (cyan),
+`yellow`, `mauve` (magenta), and `reset`. `colors` controls picker text;
+`fzf_colors` accepts fzf's `--color` syntax for the finder UI. Neither sets the
+native tmux border; configure that with `set -g popup-border-style`.
+
 ## Plugins
 
 First-party plugins bundled in `plugins/` load before every `*.lua` file under

@@ -122,16 +122,25 @@ function M.open(view_id, self_command)
 		end
 	end
 
+	local default_opts = os.getenv("FZF_DEFAULT_OPTS") or ""
+	local opts_file = os.getenv("FZF_DEFAULT_OPTS_FILE")
+	if not opts_file or opts_file == "" then
+		-- User options follow this fallback so their theme takes precedence.
+		default_opts = "--color=16 " .. default_opts
+	end
+	local color_option = config.fzf_colors and ("--color " .. quote(config.fzf_colors)) or ""
 	local fzf = string.format(
-		[[PATH=%s TMUX_PANE= fzf --popup %s --border=none \
+		[[PATH=%s FZF_DEFAULT_OPTS=%s TMUX_PANE= fzf --popup %s --border=none \
       --ansi --print-query \
       --delimiter='\t' --with-nth=3,5 --tabstop=1 --tiebreak=begin,index \
-      --color='border:#89b4fa,label:#89b4fa,preview-border:#89b4fa' \
+      %s \
       --prompt %s --header %s \
       --preview %s --preview-window %s \
       %s]],
 		quote(config.path_prefix),
+		quote(default_opts),
 		quote(view.size .. ",border-native"),
+		color_option,
 		quote(view.prompt),
 		quote(M.legend(view_id)),
 		quote(self_q .. " preview {1} {2} {4}"),
