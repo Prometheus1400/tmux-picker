@@ -1,0 +1,30 @@
+name: Tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        lua: [lua5.1, luajit]
+        zoxide: [true, false]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y lua5.1 luajit tmux fzf
+      - name: Install optional zoxide
+        if: matrix.zoxide
+        run: sudo apt-get install -y zoxide
+      - uses: actions/checkout@v4
+        with:
+          repository: tmux-plugins/tpm
+          path: .tpm
+      - name: Lua and shell checks
+        env:
+          LUA_BIN: ${{ matrix.lua }}
+        run: tests/run
+      - name: TPM integration
+        env:
+          TPM_SOURCE: ${{ github.workspace }}/.tpm
+        run: python3 tests/tpm.py

@@ -4,8 +4,8 @@ An extensible fzf popup for navigating tmux sessions, windows, and panes.
 
 ## Requirements
 
-- tmux
-- fzf with popup support
+- tmux 3.3+
+- fzf 0.71+ (`--popup` support)
 - Lua 5.1+ or LuaJIT
 - zoxide (optional first-party plugin)
 
@@ -14,8 +14,12 @@ Run `tmux-picker doctor` to check required commands and plugin load errors.
 ## TPM installation
 
 ```tmux
-set -g @plugin 'your-name/tmux-picker'
+set -g @plugin 'Prometheus1400/tmux-picker'
 ```
+
+Keep TPM initialization at the end of your tmux configuration, reload it, then
+press Prefix-I to install. TPM installs the plugin in its configured plugins
+directory and handles updates with Prefix-U.
 
 The default binding is Prefix-o. Override it before TPM initializes:
 
@@ -29,6 +33,33 @@ Set the option to an empty string to define bindings yourself:
 set -g @tmux-picker-key ''
 bind-key o run-shell '#{@tmux-picker-command}'
 ```
+
+`@tmux-picker-command` contains the shell command for the installed launcher.
+You can set it before TPM initializes to use a custom launcher. Automatically
+generated paths refresh when the checkout moves; explicit overrides are preserved.
+Options named `@tmux-picker-default-command`, `@tmux-picker-bound-key`, and
+`@tmux-picker-binding` are internal state and should not be configured manually.
+
+### Dependency PATH
+
+TPM does not install tmux, fzf, or Lua. They must be available in tmux's environment.
+For fzf installed with `~/.fzf/install`, add `~/.fzf/bin` to your shell's PATH
+before starting tmux. For an existing server, refresh its environment:
+
+```sh
+tmux set-environment -g PATH "$PATH"
+tmux set-environment PATH "$PATH"
+```
+
+Run the installed launcher's dependency check:
+
+```sh
+~/.tmux/plugins/tmux-picker/bin/tmux-picker doctor
+```
+
+Adjust that path if you configured a different TPM plugins directory. `doctor`
+checks command availability and extension load errors; compare `fzf --version`
+and `tmux -V` with the requirements above separately.
 
 ## Standalone installation
 
@@ -134,5 +165,14 @@ Run:
 
 ```sh
 tests/run
+LUA_BIN=lua tests/run
+TPM_SOURCE="$HOME/.tmux/plugins/tpm" python3 tests/tpm.py
 stylua --check lua tests
 ```
+
+The integration test uses an isolated tmux server and temporary HOME and clones
+the repository through TPM. It does not modify your running tmux server.
+
+## License
+
+MIT; see [LICENSE](LICENSE).

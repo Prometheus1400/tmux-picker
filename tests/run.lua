@@ -51,8 +51,10 @@ assert(not registry.view("partial"), "failed plugin was not rolled back")
 
 registry.reset()
 views.register()
+-- Use the test PATH consistently for optional-dependency checks.
+require("tmux_picker.config").path_prefix = os.getenv("PATH") or "/usr/bin"
 registry.load_plugins(root .. "/plugins")
 local has_zoxide = util.run("command -v zoxide 2>/dev/null")
-equal(registry.view("zoxide") ~= nil, has_zoxide ~= nil, "bundled zoxide plugin")
+equal(registry.view("zoxide") ~= nil, has_zoxide ~= nil and has_zoxide ~= "", "bundled zoxide plugin")
 
 io.write("tmux-picker tests passed\n")
