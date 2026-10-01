@@ -248,6 +248,22 @@ Failed updates retain the prior working checkout, so offline use can continue.
 Missing or changed pins that cannot be resolved don't load an incompatible copy.
 The picker reports synchronization errors through `doctor`.
 
+`tmux-workspace` provides an optional third-party view for creating a workspace
+with its configured template. Declare its picker extension to add a dedicated
+`C-n new workspace` view; the sessions view and existing session selection keep
+their normal behavior:
+
+```lua
+return {
+  plugins = {
+    {
+      repo = "Ryan-W31/tmux-workspace",
+      entry = "tmux-picker/plugin.lua",
+    },
+  },
+}
+```
+
 Managed entries load in declaration order after bundled and manually installed
 plugins. Existing `.lua` files in `~/.config/tmux-picker/plugins` continue to work
 and are never managed or removed. `TMUX_PICKER_DISABLE_PLUGINS=1` also disables
