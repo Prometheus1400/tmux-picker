@@ -1,216 +1,309 @@
 # tmux-picker
 
-An extensible fzf popup for navigating tmux sessions, windows, and panes.
+Jump between tmux sessions, windows, panes, directories, and coding agents from
+one extensible fzf popup.
 
-## Requirements
+**Prefix-o** opens the picker. Type to filter, switch views, and press **Enter**
+to jump to your selection.
 
-- tmux 3.3+
-- fzf 0.71+ (`--popup` support)
-- Lua 5.1+ or LuaJIT
-- zoxide (optional first-party plugin)
+| Key | View | Preview / destination |
+| --- | --- | --- |
+| **Ctrl-T** | Sessions | tmux sessions |
+| **Ctrl-W** | Windows | Pane layout and running processes |
+| **Ctrl-O** | Panes | Individual panes |
+| **Ctrl-X** | zoxide | Directories from zoxide; requires its executable |
+| **Ctrl-E** | Agents | Running Codex sessions and recent conversation |
 
-Run `tmux-picker doctor` to check required commands and plugin load errors.
+[Install](#install) · [Configure](#configure) · [Codex setup](#codex-setup) ·
+[Third-party plugins](#third-party-plugins) · [Plugin API](#plugin-api)
 
-## TPM installation
+## Install
+
+### With TPM
+
+Add this **before TPM initialization** in your tmux configuration:
 
 ```tmux
 set -g @plugin 'Prometheus1400/tmux-picker'
 ```
 
-Keep TPM initialization at the end of your tmux configuration, reload it, then
-press Prefix-I to install. TPM installs the plugin in its configured plugins
-directory and handles updates with Prefix-U.
+Reload the configuration → **Prefix-I** installs → **Prefix-o** opens.
+Use **Prefix-U** for TPM updates. Keep TPM initialization at the end of the
+configuration; it uses your configured TPM plugins directory.
 
-The default binding is Prefix-o. Override it before TPM initializes:
+| Dependency | Minimum | Used for |
+| --- | --- | --- |
+| tmux | 3.3 | Popup and pane navigation |
+| fzf | 0.71 | `--popup` support |
+| Lua / LuaJIT | Lua 5.1+ or LuaJIT | Picker runtime |
+| zoxide | Optional | Directory view |
+| Python 3 | Optional | Agents view; third-party plugin reconciliation |
+| Git | Optional for reconciliation | Third-party plugin repositories |
 
-```tmux
-set -g @tmux-picker-key 's'
+TPM installs the picker. Its dependencies must already be available in tmux's
+`PATH`. Check the installation:
+
+```sh
+~/.tmux/plugins/tmux-picker/bin/tmux-picker doctor
+fzf --version
+tmux -V
 ```
 
-Set the option to an empty string to define bindings yourself:
+`doctor` checks command availability and plugin errors; check versions separately
+against the table. Adjust the launcher path for a custom TPM plugins directory.
+You can also run `tmux-picker doctor` if the launcher is on your `PATH`.
 
-```tmux
-set -g @tmux-picker-key ''
-bind-key o run-shell '#{@tmux-picker-command}'
-```
+<details>
+<summary>tmux cannot find fzf or Lua</summary>
 
-`@tmux-picker-command` contains the shell command for the installed launcher.
-You can set it before TPM initializes to use a custom launcher. Automatically
-generated paths refresh when the checkout moves; explicit overrides are preserved.
-Options named `@tmux-picker-default-command`, `@tmux-picker-bound-key`, and
-`@tmux-picker-binding` are internal state and should not be configured manually.
-
-### Dependency PATH
-
-TPM does not install tmux, fzf, or Lua. They must be available in tmux's environment.
-For fzf installed with `~/.fzf/install`, add `~/.fzf/bin` to your shell's PATH
-before starting tmux. For an existing server, refresh its environment:
+For fzf installed with `~/.fzf/install`, put `~/.fzf/bin` on your shell's `PATH`
+before starting tmux. Refresh both environments on an existing server:
 
 ```sh
 tmux set-environment -g PATH "$PATH"
 tmux set-environment PATH "$PATH"
 ```
 
-Run the installed launcher's dependency check:
+</details>
 
-```sh
-~/.tmux/plugins/tmux-picker/bin/tmux-picker doctor
+<details>
+<summary>Change the binding or launcher</summary>
+
+Set options before TPM initializes:
+
+```tmux
+# Open with Prefix-s.
+set -g @tmux-picker-key 's'
 ```
 
-Adjust that path if you configured a different TPM plugins directory. `doctor`
-checks command availability and extension load errors; compare `fzf --version`
-and `tmux -V` with the requirements above separately.
+Or define your own binding:
 
-## Standalone installation
+```tmux
+set -g @tmux-picker-key ''
+bind-key o run-shell '#{@tmux-picker-command}'
+```
 
-Clone the package anywhere and invoke `bin/tmux-picker`:
+`@tmux-picker-command` contains the installed launcher's shell command. Set it
+explicitly to use a custom launcher. Generated paths refresh when the checkout
+moves; explicit overrides are preserved.
+
+Leave the internal options `@tmux-picker-default-command`,
+`@tmux-picker-bound-key`, and `@tmux-picker-binding` to the plugin.
+
+</details>
+
+### Without TPM
+
+```sh
+git clone https://github.com/Prometheus1400/tmux-picker.git \
+  ~/.local/share/tmux-picker
+```
 
 ```tmux
 bind-key o run-shell '~/.local/share/tmux-picker/bin/tmux-picker'
 ```
 
-The launcher discovers all Lua modules relative to itself, so the package
-does not need to be on `PATH`.
+The checkout can live anywhere. `bin/tmux-picker` finds its Lua modules relative
+to itself; adding the package to `PATH` is optional.
 
-## Window previews
+## Preview the destination
 
-The windows view (Ctrl-W) previews the pane split layout, labelled with each
-pane's index and current process. `*` and green labels mark the active pane.
-The diagram scales to fit the preview; full process names, sizes, and paths
-remain listed below it. Zoomed windows show their full saved layout. Very
-small previews fall back to the pane details.
+### Windows · Ctrl-W
 
-## Configuration
+A window with three panes looks like this:
 
-Optional settings live in
-`${XDG_CONFIG_HOME:-$HOME/.config}/tmux-picker/init.lua`:
+```text
+┌───────────────────────┬───────────────────────┐
+│                       │       2: codex        │
+│                       ├───────────────────────┤
+│       1: nvim *       │       3: zsh          │
+│                       │                       │
+└───────────────────────┴───────────────────────┘
+```
+
+`*` and green labels identify the active pane. The diagram scales to fit, with
+full process names, pane sizes, and paths listed below. Zoomed windows still
+show the complete saved layout; very small previews show pane details instead.
+
+### Agents · Ctrl-E
+
+Example rows:
+
+```text
+waiting  codex  app:1.0      /work/app       approval requested
+working  codex  dotfiles:2.1 /work/dotfiles  using tool
+idle     codex  docs:0.0     /work/docs      turn completed
+```
+
+Example preview:
+
+```text
+codex conversation · working
+app:1.0 · /work/app
+using tool · 14:32:08
+
+You
+Add keyboard navigation to the picker.
+
+codex
+The bindings are in place. I'm checking the selection behavior.
+```
+
+| Action | Behavior |
+| --- | --- |
+| **Enter** | Focus the exact agent pane; verify it still exists first |
+| **Ctrl-R** | Refresh agents and status |
+| Enter the view | Refresh the list; waiting sorts before working and idle |
+| **Ctrl-D** | Leaves agents running; use the panes view to kill a pane |
+
+The view discovers Codex through descendants of each pane's shell on the current
+tmux server. Launch `codex` normally; no wrapper or daemon changes are needed.
+Python 3's standard library is the only extra dependency. Lists refresh on entry
+and Ctrl-R, with no continuous polling.
+
+## Codex setup
+
+Running agents appear immediately. Hooks add status and link conversation previews:
+
+```sh
+~/.tmux/plugins/tmux-picker/bin/tmux-picker-agents install-codex-hooks
+```
+
+In Codex, open **`/hooks`** and review/trust the tmux-picker handlers. For an
+existing session, exit and use `codex resume` to reopen the same conversation
+with the new hook configuration. Refresh the Agents view with **Ctrl-R**.
+
+| Observed event | Status |
+| --- | --- |
+| Prompt submission or tool activity | `working` |
+| Approval request | `waiting` |
+| Turn completion or interruption | `idle` |
+| Session end | `stopped` |
+| No associated hook status | `unknown` |
+
+Status is the last observed signal; it does not prove that an approval or user
+question is still pending. New events appear on the next refresh.
+
+<details>
+<summary>Hook installation, removal, and pane association</summary>
+
+The installer merges handlers into `${CODEX_HOME:-$HOME/.codex}/hooks.json`,
+preserves other hooks, and backs up the original to `hooks.json.tmux-picker-backup`.
+Repeat it safely after moving the plugin. Remove only the picker's handlers with:
+
+```sh
+~/.tmux/plugins/tmux-picker/bin/tmux-picker-agents uninstall-codex-hooks
+```
+
+| Association | Result |
+| --- | --- |
+| Hook process ancestry identifies the CLI | Link to its pane |
+| Shared daemon; one Codex process matches the hook's directory | Link with an **inferred** label in the preview |
+| Multiple same-directory agents, with no exact link | Keep status `unknown` |
+| Hook has no tmux server | Keep the event unassociated |
+
+Process start times and pane ownership reject stale records. Disabling the
+Agents view leaves independently installed hooks in place; uninstall the hooks
+to stop recording status. Hooks never inject instructions or make approval decisions.
+
+</details>
+
+<details>
+<summary>Conversation storage and preview performance</summary>
+
+| Data | Handling |
+| --- | --- |
+| Agent state | `${XDG_STATE_HOME:-$HOME/.local/state}/tmux-picker/agents` |
+| Saved fields | Metadata, including Codex's transcript path |
+| Conversation text | Read from the existing transcript; never copied or cached in picker state |
+| Read limit | At most 256 KiB from the transcript tail |
+| Display limit | Last eight user/assistant messages; long messages are shortened |
+| Omitted content | System/developer instructions, reasoning, and tool calls |
+| Missing or unsupported transcript | An availability notice in the preview |
+
+Transcript formats vary by Codex version. The list caches agent metadata;
+navigating validates only the selected process and pane, picks up new hook
+status, and reads the bounded transcript tail. Enter performs fresh discovery
+before switching panes.
+
+</details>
+
+## Configure
+
+Create `${XDG_CONFIG_HOME:-$HOME/.config}/tmux-picker/init.lua`:
 
 ```lua
 return {
   size = "70%,80%",
   preview_window = "up,55%",
   hidden_sessions = { scratch = true },
-  bundled_plugins = { zoxide = true },
+  bundled_plugins = {
+    zoxide = true,
+    agents = true,
+  },
+  agents = { providers = { codex = true } },
 }
 ```
 
-### Colors
+### Choose bundled plugins
 
-Picker labels and previews use the terminal's ANSI palette by default. They
-follow terminal themes such as Rose Pine without fixed RGB colors. The native
-popup border follows your tmux `popup-border-style`.
+```lua
+return {
+  bundled_plugins = { zoxide = false }, -- keep Agents; disable zoxide
+}
+```
 
-fzf starts with its 16-color scheme before applying `FZF_DEFAULT_OPTS`, so your
-existing fzf theme takes precedence. If `FZF_DEFAULT_OPTS_FILE` is set, its
-options are respected without adding a scheme. tmux must receive these
-environment variables when it starts, or through `tmux set-environment`.
+| Setting | Effect on the next picker launch |
+| --- | --- |
+| `bundled_plugins = { agents = false }` | Disable Agents |
+| `agents = { providers = { codex = false } }` | Keep the view; disable its Codex provider |
+| `bundled_plugins = false` | Disable all bundled plugins; keep user plugins |
+| `TMUX_PICKER_DISABLE_PLUGINS=1` | Disable all plugins and Git reconciliation |
 
-Override individual label/preview colors in `init.lua`; omitted colors retain
-their defaults. Values are ANSI escape sequences, and `""` disables a color:
+Bundled plugins default to enabled, including omitted names. Set a name to `true`
+to opt back in; zoxide still needs its executable on the picker's `PATH`.
+Names are Lua filenames in `plugins/` without `.lua`. Disabled bundled files
+are not evaluated. The tmux-only core works without optional plugins.
+
+### Match your colors
+
+| Surface | Default / override |
+| --- | --- |
+| Picker labels and previews | Terminal ANSI palette; override with `colors` |
+| fzf UI | 16-color fallback, then `FZF_DEFAULT_OPTS`; override with `fzf_colors` |
+| Native popup border | tmux `popup-border-style` |
+
+Defaults follow terminal palettes such as Rose Pine. With `FZF_DEFAULT_OPTS_FILE`
+set, its options are respected without adding a color scheme. Give tmux these
+environment variables at startup or with `tmux set-environment`.
 
 ```lua
 return {
   colors = {
-    blue = "\27[34m", -- terminal blue
-    muted = "\27[90m", -- terminal bright black
-    teal = "\27[38;2;156;207;216m", -- explicit RGB, if desired
+    blue = "\27[34m",                 -- terminal blue
+    muted = "\27[90m",                -- terminal bright black
+    teal = "\27[38;2;156;207;216m",    -- explicit RGB
+    yellow = "",                     -- disable this text color
   },
-  -- Optional fzf colors for this picker; overrides matching global fzf colors.
   fzf_colors = "border:#ebbcba,label:#ebbcba,preview-border:#31748f",
 }
 ```
 
-Color keys are `muted`, `green`, `peach` (terminal red), `blue`, `teal` (cyan),
-`yellow`, `mauve` (magenta), and `reset`. `colors` controls picker text;
-`fzf_colors` accepts fzf's `--color` syntax for the finder UI. Neither sets the
-native tmux border; configure that with `set -g popup-border-style`.
+Omitted text colors keep their defaults. Values are ANSI escape sequences.
+`fzf_colors` uses fzf's `--color` syntax and overrides matching global fzf colors.
+Neither option changes the native border:
 
-## Plugins
-
-### Agents view
-
-The bundled `agents` plugin adds **Ctrl-E** to discover coding agents running
-inside panes on the current tmux server. Codex is the first supported provider.
-It takes one process snapshot and walks descendants of each pane's shell;
-ordinary `codex` launches work without a wrapper or changes to daemon behavior.
-The optional view requires Python 3 (standard library only).
-
-Rows show status, provider, session/window/pane location, and directory. Enter
-focuses the exact pane, **Ctrl-R** refreshes, and the preview shows a compact
-status header and recent conversation messages labelled **You** and **codex**.
-Waiting agents sort before working and idle agents. Ctrl-D
-does not kill agents; use the panes view for that. Lists refresh on entry and
-Ctrl-R; they do not poll continuously.
-
-Without hooks, running agents appear with `unknown` status. To add Codex status:
-
-```sh
-~/.tmux/plugins/tmux-picker/bin/tmux-picker-agents install-codex-hooks
+```tmux
+set -g popup-border-style 'fg=blue'
 ```
 
-Then open **`/hooks` in Codex** to review and trust the handlers. The command
-merges handlers into `${CODEX_HOME:-$HOME/.codex}/hooks.json`, preserves other
-hooks, saves the original to `hooks.json.tmux-picker-backup`, and is safe to
-repeat after moving the plugin. To remove only the picker's handlers:
+Available color keys: `muted`, `green`, `peach` (red), `blue`, `teal` (cyan),
+`yellow`, `mauve` (magenta), and `reset`.
 
-```sh
-~/.tmux/plugins/tmux-picker/bin/tmux-picker-agents uninstall-codex-hooks
-```
+## Third-party plugins
 
-Prompt submission and tool activity mark `working`, approval requests mark
-`waiting`, turn completion/interruption mark `idle`, and session end marks
-`stopped`. These are last observed hook signals, not proof that every approval
-or user question is still pending. Updates apply on the next refresh.
-
-Hooks prefer process ancestry to associate a session with its pane. Shared
-Codex daemon hooks may lack that ancestry; the adapter then infers association
-only when exactly one Codex process on that server matches the hook's working
-directory. The preview labels this inference. Multiple Codex instances in the
-same directory remain `unknown` when no exact association is available, rather
-than guessing between them. A hook without a tmux server remains unassociated.
-Pane existence and process start time are rechecked to reject stale records.
-
-State lives under `${XDG_STATE_HOME:-$HOME/.local/state}/tmux-picker/agents`.
-Records contain metadata only, including the transcript path provided by Codex;
-prompts, responses, and tool arguments are not copied into picker state. The
-conversation preview reads that existing transcript on demand, using at most
-256 KiB of its tail and displaying the last eight user/assistant messages.
-Long messages are shortened; system/developer instructions, reasoning, and
-tool calls are omitted. Transcript formats are version-dependent, so an
-unavailable or unsupported transcript produces a notice instead of pane output.
-The hook prints no agent instructions and never makes approval decisions.
-
-The agent list caches its metadata for previews. Navigating the list validates
-only the selected process and pane, picks up new hook status, and reads its
-bounded transcript tail. Enter still performs fresh discovery before switching
-panes. Conversation text is not cached in picker state.
-
-Disable this first-party plugin, or a provider, in `init.lua`:
-
-```lua
-return {
-  bundled_plugins = { agents = false },
-  -- Alternatively keep the view and disable only Codex:
-  -- agents = { providers = { codex = false } },
-}
-```
-
-Disabling the view does not uninstall separately configured Codex hooks; use
-the uninstall command to stop recording status.
-
-Provider adapters live in `bin/agent_providers/`. Each exposes `matches(process)`
-and an `events` map translating native hook names into `(status, reason)` pairs.
-`conversation(record)` returns recent `{role, text}` messages and an optional
-availability notice for that provider's native conversation storage.
-Register a new adapter in `PROVIDERS`, and supply its native hook configuration;
-the shared discovery, storage, sorting, and Agents view need no provider-specific
-changes. `tmux-picker-agents hook <provider>` receives the adapter's event JSON
-on stdin. The initial hook setup command is Codex-specific.
-
-### Third-party plugins
-
-Declare Git repositories in `~/.config/tmux-picker/init.lua`. Opening the picker
-reconciles the declarations automatically; there are no install/update commands:
+Declare picker plugin repositories in `init.lua`; opening the picker reconciles
+the configuration automatically:
 
 ```lua
 return {
@@ -218,70 +311,73 @@ return {
     "owner/example-picker-plugin", -- GitHub shorthand; loads plugin.lua
     {
       repo = "https://github.com/owner/another-plugin.git",
-      name = "another",             -- optional; defaults to repository basename
-      entry = "plugins/main.lua",   -- optional; defaults to plugin.lua
-      version = "v1.2.0",            -- optional: tag, commit SHA, or branch
-      enabled = true,               -- false prevents loading and synchronization
+      name = "another",
+      entry = "plugins/main.lua",
+      version = "v1.2.0",
+      enabled = true,
     },
   },
-  plugins_update_interval = 86400,   -- seconds between branch update checks
+  plugins_update_interval = 86400,
 }
 ```
 
-Use an SSH Git URL or an absolute local repository path instead of GitHub
-shorthand if needed. This is for repositories implementing the picker plugin API,
-not arbitrary TPM plugins. Git and Python 3 are required for reconciliation.
+Replace the example repos with extensions implementing the [picker API](#plugin-api).
+TPM continues to manage tmux plugins. Git and Python 3 handle picker reconciliation;
+there are no install/update commands.
 
-Missing enabled repositories are cloned under
-`${XDG_DATA_HOME:-$HOME/.local/share}/tmux-picker/plugins`. Changing the repo,
-entry, or version applies on the next open. Tags and commit SHAs stay pinned;
-an omitted version tracks the repository's default branch, and named branches
-track that branch. Branch updates are checked once per day by default. Set the
-interval to `0` to check on every open. Network access happens only when opening
-the picker, never in list, preview, or action subprocesses.
+| Field | Default | Also accepts |
+| --- | --- | --- |
+| `repo` | Required | GitHub `owner/repo`, HTTPS/SSH Git URL, absolute local repo path |
+| `name` | Repository basename | A unique checkout name |
+| `entry` | `plugin.lua` | A relative `.lua` path inside the repo |
+| `version` | Track default branch | Tag, commit SHA, or named branch |
+| `enabled` | `true` | `false` to stop loading and synchronization |
+| `plugins_update_interval` | `86400` seconds | `0` to check branches on every open |
 
-Set `enabled = false` to retain an installed checkout without evaluating its
-entry file or fetching updates. Disabled declarations that aren't installed
-aren't cloned. Remove a declaration to remove its managed checkout on the next
-open. Local changes and untracked files block updates/removal and are preserved.
-Failed updates retain the prior working checkout, so offline use can continue.
-Missing or changed pins that cannot be resolved don't load an incompatible copy.
-The picker reports synchronization errors through `doctor`.
+### Edit config → reopen picker
 
-Managed entries load in declaration order after bundled and manually installed
-plugins. Existing `.lua` files in `~/.config/tmux-picker/plugins` continue to work
-and are never managed or removed. `TMUX_PICKER_DISABLE_PLUGINS=1` also disables
-reconciliation. Repositories are trusted Lua code running with picker permissions.
+| Config change / condition | Reconciliation |
+| --- | --- |
+| Add an enabled repo | Clone it and load its entry |
+| Change repo, entry, or version | Apply the change on the next open |
+| Pin a tag or SHA | Keep that version fixed |
+| Select a branch | Track it; check for updates once a day by default |
+| Set `enabled = false` | Keep an installed checkout, skip evaluation and fetching; don't clone a missing one |
+| Remove a declaration | Remove its managed checkout |
+| Local edits or untracked files | Preserve them; block update/removal |
+| Update fails or network is offline | Retain the prior working checkout |
+| Changed pin cannot resolve | Skip the incompatible installed copy |
 
-### Writing plugins
+Managed checkouts live in
+`${XDG_DATA_HOME:-$HOME/.local/share}/tmux-picker/plugins`. Git runs only when
+opening the picker, never in list, preview, or action subprocesses. `doctor`
+reports synchronization errors.
 
-First-party plugins bundled in `plugins/` load before every `*.lua` file under
-`${XDG_CONFIG_HOME:-$HOME/.config}/tmux-picker/plugins`. Files in each
-directory load in filename order. Plugins are trusted code and run with the
-same permissions as the picker.
+<details>
+<summary>Manual plugins and load order</summary>
 
-The bundled `zoxide.lua` plugin adds a dedicated Ctrl-X view when the `zoxide`
-executable is available. The tmux-only core works without it.
-
-Bundled plugins are enabled by default. Opt out of an individual plugin in
-`~/.config/tmux-picker/init.lua` (or the equivalent under `XDG_CONFIG_HOME`):
-
-```lua
-return {
-  bundled_plugins = { zoxide = false },
-}
+```text
+1. Bundled plugins/                         filename order
+2. ~/.config/tmux-picker/plugins/*.lua       filename order
+3. Repositories declared in init.lua         declaration order
 ```
 
-Set `zoxide = true` to opt back in; its executable must still be available on
-the picker's PATH. Names are the bundled Lua filenames without `.lua`. Omitted
-names remain enabled. A disabled plugin's file is not evaluated.
+The manual directory follows `XDG_CONFIG_HOME`; `TMUX_PICKER_PLUGIN_DIR` overrides
+it for testing or a different location. Existing manual files continue to work
+and are never managed or removed. Files in nested directories are not scanned.
 
-Set `bundled_plugins = false` to disable all bundled plugins while continuing
-to load your user plugins. These settings apply the next time the picker opens.
-`TMUX_PICKER_DISABLE_PLUGINS=1` takes precedence and disables both bundled and
-user plugins.
+All plugins are trusted Lua code with the picker's permissions.
+`TMUX_PICKER_DISABLE_PLUGINS=1` skips both loading and reconciliation.
 
-A plugin returns a descriptor:
+</details>
+
+## Plugin API
+
+<details>
+<summary>Plugin descriptor: view, rows, action handlers, and refresh</summary>
+
+Save this as `plugin.lua` in a plugin repository, or as an individual `.lua` file
+in the manual plugin directory:
 
 ```lua
 return {
@@ -328,26 +424,41 @@ return {
 }
 ```
 
-Other extension points are:
+</details>
 
-- `register_decorator(scope, fn)` for `session`, `window`, `pane`, or
-  `command` display values.
-- `register_supplement(view_id, fn)` to append rows to a core view.
-- `register_hook(event, fn)` for `open`, `view_change`, `enter`, and `escape`.
+| Extension point | Scope |
+| --- | --- |
+| `register_view` | Views, shortcuts, prompts, query handling, and action keys |
+| `register_kind` | Row selection, preview, and kill behavior |
+| `register_action` | Custom actions, including reload responses |
+| `register_decorator(scope, fn)` | `session`, `window`, `pane`, or `command` display values |
+| `register_supplement(view_id, fn)` | Append rows to a core view |
+| `register_hook(event, fn)` | `open`, `view_change`, `enter`, or `escape` |
 
-The context also exposes `config`, `util`, `tmux`, `git`, `json`, `notify`,
-and `decorate`.
+`ctx` also exposes `config`, `util`, `tmux`, `git`, `json`, `notify`, and `decorate`.
+Plugin, view, row-kind, and action IDs must be unique; prefix plugin-owned actions
+with the plugin ID. Failed setup rolls back that plugin, reports through `doctor`,
+and lets other views continue to load.
 
-Plugin IDs, view IDs, row-kind IDs, and action IDs must be unique. Prefix
-plugin-owned actions with the plugin ID. A plugin that fails during setup is
-rolled back and reported by `doctor`; other views continue to load.
+<details>
+<summary>Add another coding-agent provider</summary>
 
-Set `TMUX_PICKER_PLUGIN_DIR` to test another plugin directory, or
-`TMUX_PICKER_DISABLE_PLUGINS=1` to run only the core.
+Adapters live in `bin/agent_providers/`:
+
+| Adapter member | Contract |
+| --- | --- |
+| `matches(process)` | Detect the provider's running process |
+| `events` | Map native hook names to `(status, reason)` |
+| `conversation(record)` | Return recent `{role, text}` messages and an optional availability notice |
+
+Register the adapter in `PROVIDERS` and supply its native hook configuration.
+Shared discovery, state, sorting, and the Agents view need no provider-specific
+changes. `tmux-picker-agents hook <provider>` reads event JSON from stdin;
+the bundled hook setup command currently supports Codex.
+
+</details>
 
 ## Development
-
-Run:
 
 ```sh
 tests/run
@@ -356,9 +467,10 @@ TPM_SOURCE="$HOME/.tmux/plugins/tpm" python3 tests/tpm.py
 stylua --check lua tests
 ```
 
-The integration test uses an isolated tmux server and temporary HOME and clones
-the repository through TPM. It does not modify your running tmux server.
+Integration tests clone through TPM in an isolated tmux server with a temporary
+`HOME`; they leave your running server alone. Use `TMUX_PICKER_PLUGIN_DIR` to
+point at test extensions, or `TMUX_PICKER_DISABLE_PLUGINS=1` to run only the core.
 
 ## License
 
-MIT; see [LICENSE](LICENSE).
+[MIT](LICENSE).
