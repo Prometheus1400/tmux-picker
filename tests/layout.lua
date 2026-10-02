@@ -54,7 +54,7 @@ assert(diagram(single, 20, 5):find("café", 1, true), "UTF-8 process name corrup
 
 -- The window preview must use the saved layout when pane geometry is zoomed.
 registry.reset()
-views.register()
+views.register_kinds()
 local original_info, original_panes, original_ref, original_write = tmux.info, tmux.list_window_panes, git.ref, io.write
 local output = {}
 tmux.info = function()

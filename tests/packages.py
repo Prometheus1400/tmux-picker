@@ -140,7 +140,7 @@ class PackagesTests(unittest.TestCase):
             env.pop(key, None)
         def configure(enabled=True, declared=True):
             spec = 'repo=' + json.dumps(str(self.repo)) + ',name="demo",enabled=' + str(enabled).lower()
-            config.write_text('return {bundled_plugins=false,plugins={' + ('{' + spec + '}' if declared else '') + '}}')
+            config.write_text('return {bundled_plugins={windows=false,panes=false,zoxide=false,agents=false},plugins={' + ('{' + spec + '}' if declared else '') + '}}')
         def run(*args):
             return subprocess.check_output([str(ROOT / "bin/tmux-picker"), *args], env=env, text=True)
         configure()

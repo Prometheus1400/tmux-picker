@@ -8,6 +8,7 @@ export TMUX_PICKER_ROOT="$ROOT"
 export LUA_PATH="${ROOT}/lua/?.lua;${ROOT}/lua/?/init.lua;;"
 
 "$LUA_BIN" "${ROOT}/tests/run.lua"
+"$LUA_BIN" "${ROOT}/tests/views.lua"
 "$LUA_BIN" "${ROOT}/tests/layout.lua"
 "$LUA_BIN" "${ROOT}/tests/colors.lua"
 "$LUA_BIN" "${ROOT}/tests/packages.lua"

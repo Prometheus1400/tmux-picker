@@ -38,7 +38,7 @@ return {
 					extra = util.clean_field(record.reason)})
 			end
 		end
-		ctx.register_view({id = "agents", order = 40, label = "agents", key = "ctrl-e", chord = "C-e",
+		ctx.register_view({id = "agents", order = 45, label = "agents", key = "ctrl-e", chord = "C-e",
 			prompt = "agents > ", color = config.colors.green, list = list,
 			keys = {{key = "ctrl-r", chord = "C-r", label = "refresh", action = "agents.refresh"}}})
 		ctx.register_action("agents.refresh", function(_, view) return {reload = true, view = view} end)

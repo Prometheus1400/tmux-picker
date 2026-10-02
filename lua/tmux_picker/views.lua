@@ -291,7 +291,7 @@ local function preview_window(id)
 	end
 end
 
-function M.register()
+function M.register_kinds()
 	registry.register_kind("session", {
 		accept = function(row)
 			sessions.connect(row.target)
@@ -316,35 +316,44 @@ function M.register()
 			preview_pane(row.target)
 		end,
 	})
+end
 
-	registry.register_view({
-		id = "sessions",
-		order = 10,
-		label = "tmux",
-		key = "ctrl-t",
-		chord = "C-t",
-		prompt = config.icons.session .. "  ",
-		list = list_sessions,
-		query = sessions.connect,
-	})
-	registry.register_view({
-		id = "windows",
-		order = 40,
-		label = "windows",
-		key = "ctrl-w",
-		chord = "C-w",
-		prompt = config.icons.window .. "  ",
-		list = list_windows,
-	})
-	registry.register_view({
-		id = "panes",
-		order = 50,
-		label = "panes",
-		key = "ctrl-o",
-		chord = "C-o",
-		prompt = config.icons.pane .. "  ",
-		list = list_panes,
-	})
+function M.definition(id)
+	local definitions = {
+		{
+			id = "sessions",
+			order = 10,
+			label = "tmux",
+			key = "ctrl-t",
+			chord = "C-t",
+			prompt = config.icons.session .. "  ",
+			list = list_sessions,
+			query = sessions.connect,
+		},
+		{
+			id = "windows",
+			order = 40,
+			label = "windows",
+			key = "ctrl-w",
+			chord = "C-w",
+			prompt = config.icons.window .. "  ",
+			list = list_windows,
+		},
+		{
+			id = "panes",
+			order = 50,
+			label = "panes",
+			key = "ctrl-o",
+			chord = "C-o",
+			prompt = config.icons.pane .. "  ",
+			list = list_panes,
+		},
+	}
+	for _, view in ipairs(definitions) do
+		if view.id == id then
+			return view
+		end
+	end
 end
 
 return M

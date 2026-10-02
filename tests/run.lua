@@ -11,9 +11,12 @@ end
 local root = assert(os.getenv("TMUX_PICKER_ROOT"), "TMUX_PICKER_ROOT missing")
 
 registry.reset()
-views.register()
+views.register_kinds()
+for _, name in ipairs({ "sessions", "windows", "panes" }) do
+	assert(registry.load_plugin(root .. "/plugins/" .. name .. ".lua"))
+end
 equal(registry.first_view().id, "sessions", "default view")
-equal(#registry.views(), 3, "core view count")
+equal(#registry.views(), 3, "bundled tmux view count")
 assert(registry.kind("session").accept, "session accept handler")
 assert(registry.kind("pane").preview, "pane preview handler")
 
@@ -50,7 +53,7 @@ os.remove(invalid)
 assert(not registry.view("partial"), "failed plugin was not rolled back")
 
 registry.reset()
-views.register()
+views.register_kinds()
 -- Use the test PATH consistently for optional-dependency checks.
 require("tmux_picker.config").path_prefix = os.getenv("PATH") or "/usr/bin"
 registry.load_plugins(root .. "/plugins")
@@ -67,14 +70,14 @@ config.plugin_dir = root .. "/tests/fixtures/missing"
 
 local function reload_plugins()
 	registry.reset()
-	views.register()
+	views.register_kinds()
 	loader.plugins()
 end
 
 config.bundled_plugins = { example = false }
 reload_plugins()
 assert(not registry.view("example"), "disabled bundled plugin loaded")
-equal(#registry.views(), 3, "core views with bundled plugin disabled")
+equal(#registry.views(), 0, "disabled fixture plugin")
 
 config.bundled_plugins.example = true
 reload_plugins()
@@ -86,7 +89,7 @@ assert(registry.view("example"), "omitted bundled plugin should remain enabled")
 
 config.bundled_plugins = false
 reload_plugins()
-equal(#registry.views(), 3, "all bundled plugins disabled")
+equal(#registry.views(), 0, "all bundled plugins disabled")
 config.plugin_dir = root .. "/tests/fixtures"
 reload_plugins()
 assert(registry.view("example"), "disabling bundled plugins disabled user plugins")

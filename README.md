@@ -14,8 +14,8 @@ to jump to your selection.
 | **Ctrl-X** | zoxide | Directories from zoxide; Enter creates or switches to a tmux session |
 | **Ctrl-E** | Agents | Running Codex sessions and recent conversation |
 
-The zoxide and Agents views are bundled plugins. They appear when enabled and
-their dependencies are available; conversation previews also need Codex hooks.
+All five views are bundled plugins and can be disabled individually. zoxide and
+Agents also need their optional dependencies; conversation previews need Codex hooks.
 
 [Install](#install) · [Configure](#configure) · [Codex setup](#codex-setup) ·
 [Third-party plugins](#third-party-plugins) · [Write your own plugin](#write-your-own-plugin) ·
@@ -253,6 +253,9 @@ return {
   preview_window = "up,55%",
   hidden_sessions = { scratch = true },
   bundled_plugins = {
+    sessions = true,
+    windows = true,
+    panes = true,
     zoxide = true,
     agents = true,
   },
@@ -267,12 +270,14 @@ fields in one returned table; unspecified settings keep their defaults.
 
 ```lua
 return {
-  bundled_plugins = { zoxide = false }, -- keep Agents; disable zoxide
+  bundled_plugins = { windows = false, panes = false }, -- keep Sessions, zoxide, and Agents
 }
 ```
 
 | Setting | Effect on the next picker launch |
 | --- | --- |
+| `bundled_plugins = { sessions = false }` | Disable Sessions; zoxide can still create or switch sessions |
+| `bundled_plugins = { zoxide = false }` | Disable zoxide |
 | `bundled_plugins = { agents = false }` | Disable Agents |
 | `agents = { providers = { codex = false } }` | Keep the view; disable its Codex provider |
 | `bundled_plugins = false` | Disable all bundled plugins; keep user plugins |
@@ -281,7 +286,15 @@ return {
 Bundled plugins default to enabled, including omitted names. Set a name to `true`
 to opt back in; zoxide still needs its executable on the picker's `PATH`.
 Names are Lua filenames in `plugins/` without `.lua`. Disabled bundled files
-are not evaluated. The tmux-only core works without optional plugins.
+are not evaluated. Disabled views have no shortcut or legend entry. The Sessions,
+Windows, and Panes plugins require only the core picker dependencies.
+
+**Compatibility change:** `bundled_plugins = false` now also disables Sessions,
+Windows, and Panes; previously those views always remained available. Local or
+managed plugins can provide the remaining views. If none are registered, opening
+the picker fails with a clear message and `doctor` reports the missing views.
+`TMUX_PICKER_DISABLE_PLUGINS=1` disables every view and is useful for diagnostics.
+An unavailable requested view falls back to the first enabled view in picker order.
 
 ### Match your colors
 
@@ -372,7 +385,7 @@ Managed checkouts live in
 `${XDG_DATA_HOME:-$HOME/.local/share}/tmux-picker/plugins`. Reconciliation runs
 only when opening the picker, never in list, preview, action, or `doctor`
 subprocesses. `doctor` reports saved synchronization errors and current plugin
-load errors; it does not fetch or update repositories. Core views can still run
+load errors; it does not fetch or update repositories. Bundled tmux views can still run
 local Git queries for branch/tag labels.
 
 <details>
@@ -475,7 +488,7 @@ return {
 | `register_kind` | Row selection, preview, and kill behavior |
 | `register_action` | Custom actions, including reload responses |
 | `register_decorator(scope, fn)` | `session`, `window`, `pane`, or `command` display values |
-| `register_supplement(view_id, fn)` | Append rows to a core view |
+| `register_supplement(view_id, fn)` | Append rows to a registered view |
 | `register_hook(event, fn)` | `open`, `view_change`, `enter`, or `escape` |
 
 `ctx` also exposes `config`, `util`, `tmux`, `git`, `json`, `notify`, and `decorate`.
@@ -513,7 +526,8 @@ stylua --check lua tests
 The TPM integration tests clone through TPM in an isolated tmux server with a
 temporary `HOME`; they leave your running server alone. Use
 `TMUX_PICKER_PLUGIN_DIR` to point at test extensions, or
-`TMUX_PICKER_DISABLE_PLUGINS=1` to run only the core.
+`TMUX_PICKER_DISABLE_PLUGINS=1` to diagnose the core without loading plugins
+(the picker cannot open until at least one view is enabled).
 
 ## License
 

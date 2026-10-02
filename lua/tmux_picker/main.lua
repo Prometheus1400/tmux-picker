@@ -14,15 +14,23 @@ local tmux = require("tmux_picker.tmux")
 local util = require("tmux_picker.util")
 local views = require("tmux_picker.views")
 
-views.register()
+views.register_kinds()
 loader.plugins()
 
 local self_command = os.getenv("TMUX_PICKER_CMD") or ((os.getenv("TMUX_PICKER_ROOT") or "") .. "/bin/tmux-picker")
 
+local function first_view()
+	local view = registry.first_view()
+	if not view then
+		util.die("no picker views enabled; enable a bundled or user plugin")
+	end
+	return view
+end
+
 local function current_view()
 	local id = util.read_file(config.view_file)
 	id = id and id:gsub("\n$", "")
-	return registry.view(id) and id or registry.first_view().id
+	return registry.view(id) and id or first_view().id
 end
 
 local function selected(text)
@@ -59,7 +67,7 @@ end
 local command = arg[1]
 
 if command == "list" then
-	local view = registry.view(arg[2]) or registry.first_view()
+	local view = registry.view(arg[2]) or first_view()
 	view.list()
 	os.exit(0)
 elseif command == "current" then
@@ -116,6 +124,10 @@ elseif command == "kill" then
 	os.exit(0)
 elseif command == "doctor" then
 	local failed = false
+	if not registry.first_view() then
+		io.write("missing picker views: enable a bundled or user plugin\n")
+		failed = true
+	end
 	for _, dependency in ipairs({ "tmux", "fzf" }) do
 		local output = util.run(
 			"PATH="
@@ -139,7 +151,7 @@ elseif command == "doctor" then
 end
 
 util.need("fzf")
-local view = registry.view(command) or registry.first_view()
+local view = registry.view(command) or first_view()
 local output = picker.open(view.id, self_command)
 if output and output ~= "" then
 	accept_output(output)

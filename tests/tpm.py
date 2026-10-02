@@ -134,8 +134,24 @@ with tempfile.TemporaryDirectory(prefix="tmux-picker-tpm-") as temporary:
         assert "reload(" in run("sh", "-c", command + " switch-view example")
         env["TMUX_PICKER_DISABLE_PLUGINS"] = "1"
         assert run("sh", "-c", command + " switch-view example") == "ignore"
-        assert "reload(" in run("sh", "-c", command + " switch-view windows")
+        assert run("sh", "-c", command + " switch-view windows") == "ignore"
         env.pop("TMUX_PICKER_DISABLE_PLUGINS")
+
+        # Every shipped view is now optional, while row handlers remain core.
+        user_config.write_text("return { bundled_plugins = { windows=false, panes=false } }\n")
+        assert run("sh", "-c", command + " switch-view windows") == "ignore"
+        assert run("sh", "-c", command + " switch-view panes") == "ignore"
+        assert "reload(" in run("sh", "-c", command + " switch-view sessions")
+        assert "reload(" in run("sh", "-c", command + " switch-view zoxide")
+        user_config.write_text("return { bundled_plugins = false }\n")
+        user_plugins.joinpath("example.lua").unlink()
+        for args in ("", "list sessions", "current", "doctor"):
+            result = subprocess.run(["sh", "-c", command + " " + args], env=env, text=True, capture_output=True)
+            assert result.returncode != 0, "Missing views must fail clearly"
+            assert "views" in result.stdout + result.stderr
+            assert "stack traceback" not in result.stdout + result.stderr
+        shutil.copy2(ROOT / "tests/fixtures/example.lua", user_plugins / "example.lua")
+        assert "reload(" in run("sh", "-c", command + " switch-view example")
 
         # Capture the actual fzf environment and arguments from a picker launch.
         fake_fzf = home / "go/bin/fzf"

@@ -88,7 +88,7 @@ end
 function M.open(view_id, self_command)
 	local view = registry.view(view_id) or registry.first_view()
 	if not view then
-		util.die("no picker views registered")
+		util.die("no picker views enabled; enable a bundled or user plugin")
 	end
 	view_id = view.id
 	util.write_file(config.view_file, view_id .. "\n")

@@ -11,7 +11,7 @@ M.plugin_dir = os.getenv("TMUX_PICKER_PLUGIN_DIR") or (M.config_home .. "/tmux-p
 M.managed_plugin_dir = (os.getenv("XDG_DATA_HOME") or (M.home .. "/.local/share")) .. "/tmux-picker/plugins"
 M.plugins = {}
 M.plugins_update_interval = 86400
-M.bundled_plugins = { zoxide = true, agents = true }
+M.bundled_plugins = { sessions = true, windows = true, panes = true, zoxide = true, agents = true }
 M.agents = { providers = { codex = true } }
 
 M.size = "70%,80%"

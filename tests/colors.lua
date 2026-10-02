@@ -13,7 +13,8 @@ for name, color in pairs(config.colors) do
 end
 
 registry.reset()
-views.register()
+views.register_kinds()
+registry.load_plugin(config.root .. "/plugins/sessions.lua")
 local original_popen, original_write_file, original_socket = io.popen, util.write_file, tmux.save_socket
 local command
 io.popen = function(value)
