@@ -1,7 +1,7 @@
 local loader = require("tmux_picker.loader")
 local configured = loader.configure()
 
-local subprocess_commands = {list=true, current=true, preview=true, ["switch-view"]=true, action=true,
+local subprocess_commands = {list=true, current=true, preview=true, ["switch-view"]=true, action=true, ["execute-action"]=true,
 	["fzf-enter"]=true, ["fzf-escape"]=true, kill=true, doctor=true}
 if configured ~= false and not subprocess_commands[arg[1] or ""] then
 	require("tmux_picker.packages").sync()
@@ -86,21 +86,36 @@ elseif command == "preview" then
 elseif command == "switch-view" then
 	io.write(picker.switch_action(arg[2], self_command), "\n")
 	os.exit(0)
-elseif command == "action" then
+elseif command == "action" or command == "execute-action" then
 	local action = registry.action(arg[2] or "")
+	local active_view = current_view()
+	local restore = command == "execute-action" and (picker.header_action(active_view) .. "+") or ""
 	if not action then
-		io.write("ignore\n")
+		io.write(restore, "ignore\n")
 		os.exit(0)
 	end
-	local ok, result = pcall(action, {
+	if type(action) == "function" then action = { run = action } end
+	local row = {
 		kind = arg[3] or "",
 		target = arg[4] or "",
-	}, current_view())
+	}
+	local view_id = command == "execute-action" and (arg[5] or active_view) or active_view
+	if command == "action" and action.pending then
+		local ok, pending = pcall(action.pending, row, view_id)
+		if ok and type(pending) == "string" and pending ~= "" then
+			local rendered, payload = pcall(picker.pending_action, arg[2], row, view_id, pending, self_command)
+			if rendered then io.write(payload, "\n"); os.exit(0) end
+			util.notify(payload)
+		elseif not ok then
+			util.notify(pending)
+		end
+	end
+	local ok, result = pcall(action.run, row, view_id)
 	if not ok then
 		util.notify(result)
-		io.write("ignore\n")
+		io.write(restore, "ignore\n")
 	else
-		io.write(picker.render_action(result, current_view(), self_command), "\n")
+		io.write(restore, picker.render_action(result, active_view, self_command), "\n")
 	end
 	os.exit(0)
 elseif command == "fzf-enter" then

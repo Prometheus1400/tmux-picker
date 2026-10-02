@@ -63,6 +63,13 @@ function M.register_kind(id, handler)
 end
 
 function M.register_action(id, handler)
+	if type(handler) ~= "function" then
+		if type(handler) ~= "table" or type(handler.run) ~= "function"
+			or (handler.pending ~= nil and type(handler.pending) ~= "function") then
+			error("action must be a function or a table with run and optional pending functions")
+		end
+		handler = { run = handler.run, pending = handler.pending }
+	end
 	claim(actions, id, handler, "action")
 end
 

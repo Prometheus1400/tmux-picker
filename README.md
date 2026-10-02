@@ -496,6 +496,35 @@ Plugin, view, row-kind, and action IDs must be unique; prefix plugin-owned actio
 with the plugin ID. Failed setup rolls back that plugin, reports through `doctor`,
 and lets other views continue to load.
 
+### Show progress before a slow action
+
+Use an action descriptor when work takes time:
+
+```lua
+ctx.register_action("example.slow", {
+  pending = function(row, view_id)
+    return "working..."
+  end,
+  run = function(row, view_id)
+    -- Do the slow work here.
+    return { reload = true, view = view_id, notice = "done" }
+  end,
+})
+```
+
+`pending` is optional and should only compute a cheap UI label. A non-empty
+string appears before the legend while `run` executes in a background fzf
+transform, so the picker can paint the message and remain responsive. The
+selected row and originating view are captured before execution. Completion
+clears the pending message; a returned reload `notice` replaces it. Errors also
+clear the message and use the existing tmux notification.
+
+Existing function handlers still run immediately. Missing, nil, empty, or
+non-string pending results also run immediately; a failed pending hook reports
+the error and still runs the action. The normal `reload`, `raw`, string-action,
+and `ignore` results continue to work. Closing the picker can cancel the
+background subprocess; reserve this form for work that tolerates interruption.
+
 <details>
 <summary>Add another coding-agent provider</summary>
 

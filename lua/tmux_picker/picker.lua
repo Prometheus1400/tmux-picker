@@ -41,6 +41,26 @@ function M.legend(active_id, notice)
 	return legend
 end
 
+function M.header_action(view_id, notice)
+	local header = M.legend(view_id, notice)
+	for _, delimiter in ipairs({ "|", "~", "!", "@", "#", "$", "%", "^", "&", "*", ";", "/" }) do
+		if not header:find(delimiter, 1, true) then
+			return "change-header" .. delimiter .. header .. delimiter
+		end
+	end
+	error("notice contains every supported header delimiter")
+end
+
+function M.pending_action(id, row, view_id, notice, self_command)
+	local command = quote(self_command) .. " execute-action " .. quote(id)
+		.. " " .. quote(row.kind) .. " " .. quote(row.target) .. " " .. quote(view_id)
+	-- Literal row values must not undergo another round of fzf placeholder expansion.
+	command = command:gsub("{", "\\{")
+	-- A synchronous nested transform delays painting until the slow work finishes.
+	-- Keep the command last, using ':' so punctuation in paths cannot split actions.
+	return M.header_action(view_id, notice) .. "+bg-transform:" .. command
+end
+
 function M.switch_action(view_id, self_command)
 	local view = registry.view(view_id)
 	if not view then
@@ -78,9 +98,8 @@ function M.render_action(result, current_view, self_command)
 			.. quote(self_command)
 			.. " list "
 			.. quote(view_id)
-			.. ")+change-header("
-			.. M.legend(view_id, result.notice)
-			.. ")"
+			.. ")+"
+			.. M.header_action(view_id, result.notice)
 	end
 	return "ignore"
 end
